@@ -1,0 +1,701 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,maximum-scale=1" />
+<title>Browseron's Call</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚔️</text></svg>">
+<link rel="preload" href="./js/methods.js" as="script">
+<link rel="preload" href="./js/ui.js" as="script">
+<link rel="preload" href="./js/network.js" as="script">
+<link rel="preload" href="./js/engine.js" as="script">
+<style>
+  :root{ --slot-size:56px; --slot-pad:6px; --item-size:44px; --bg:#0b0f14; --panel:#071425; --muted:#9fb6c7; --rarity-common:#ffffff; --rarity-uncommon:#3da5ff; --rarity-epic:#b37bff; --rarity-legendary:#ff9a1c; }
+/* No scrolling - ensure page fits perfectly in viewport */
+html,body{
+  height:100vh;
+  width:100vw;
+  margin:0;
+  padding:0;
+  overflow:hidden;             /* ← prevent any page scroll */
+  background:#0b0f14;
+  color:#d7eef8;
+  font-family:system-ui,Segoe UI,Roboto,Arial;
+  box-sizing:border-box;
+}
+
+/* Ensure minimum usable dimensions without scrolling */
+@media (max-width: 800px) {
+  html, body {
+    overflow:hidden;
+    min-width:800px;
+  }
+}
+
+/* Connection Screen */
+#connectionScreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #0b0f14 0%, #1a2a3a 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+#connectionScreen.hidden {
+  display: none;
+}
+
+.connectionPanel {
+  background: var(--panel);
+  border: 2px solid #1f5a72;
+  border-radius: 12px;
+  padding: 40px;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  max-width: 500px;
+  width: 90%;
+}
+
+/* Responsive connection panel */
+@media (max-width: 600px) {
+  .connectionPanel {
+    padding: 30px 20px;
+    margin: 20px;
+  }
+  
+  .connectionPanel h1 {
+    font-size: 24px;
+    margin-bottom: 20px;
+  }
+  
+  .connectionPanel input {
+    font-size: 14px;
+    padding: 10px;
+  }
+  
+  .connectionPanel button {
+    font-size: 14px;
+    padding: 10px 20px;
+  }
+}
+
+.connectionPanel h1 {
+  margin: 0 0 30px 0;
+  font-size: 28px;
+  color: #bfe7ff;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+
+.connectionPanel .inputGroup {
+  margin-bottom: 20px;
+  text-align: left;
+}
+
+.connectionPanel label {
+  display: block;
+  margin-bottom: 8px;
+  color: #9fb6c7;
+  font-weight: 500;
+}
+
+.connectionPanel input {
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #234;
+  background: #071018;
+  color: #e6f7ff;
+  font-size: 16px;
+  box-sizing: border-box;
+}
+
+.connectionPanel button {
+  background: #0b2230;
+  color: #bfe7ff;
+  border: 1px solid #1f5a72;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.connectionPanel button:hover {
+  background: #1a3a4a;
+  border-color: #2f7a92;
+}
+
+.connectionPanel button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Layout - ensure perfect fit in viewport */
+#gameWrap{
+  display:flex;
+  align-items:stretch;
+  gap:12px;
+  padding:12px;
+  height:100vh;                /* viewport-tall */
+  width:100vw;                 /* viewport-wide */
+  box-sizing:border-box;
+  min-width: 800px;            /* Ensure minimum usable width */
+  max-width:100vw;             /* Never exceed viewport width */
+  max-height:100vh;            /* Never exceed viewport height */
+  overflow:hidden;             /* Prevent any internal scrolling */
+}
+
+canvas{
+  flex:1 1 auto;
+  width:100%;
+  height:100%;
+  background:linear-gradient(#7ec0ff,#87ceeb 60%);
+  border:4px solid #0c1720;
+  box-shadow:0 6px 18px rgba(0,0,0,0.6);
+  display:block;
+  z-index:0;                   /* ensure overlay sits above */
+  min-width: 300px;            /* Ensure canvas has minimum width */
+}
+
+#game{
+  display:block;
+  margin:0 auto;
+  outline: none; /* Remove focus outline since canvas is only focused programmatically */
+}
+
+/* Responsive right panel */
+#ui{
+  width:520px;
+  min-width:400px;             /* Reduced minimum width for small screens */
+  max-width:520px;             /* Maximum width to prevent excessive stretching */
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  flex-shrink: 0;              /* Prevent UI from shrinking */
+}
+
+  /* Responsive design for small screens */
+  @media (max-width: 1200px) {
+    #ui {
+      width: 400px;
+      min-width: 350px;
+    }
+    
+    #gameWrap {
+      gap: 8px;
+      padding: 8px;
+    }
+  }
+  
+  /* Ensure panels have minimum heights for scrollbar functionality */
+  .panel {
+    min-height: 120px;
+  }
+  
+  /* Adjust panel heights for different screen sizes */
+  @media (max-height: 800px) {
+    .panel {
+      min-height: 100px;
+    }
+    
+    #log {
+      max-height: 80px;
+    }
+  }
+  
+  @media (max-height: 600px) {
+    .panel {
+      min-height: 80px;
+    }
+    
+    #log {
+      max-height: 60px;
+    }
+  }
+  
+  /* Handle very small vertical screens */
+  @media (max-height: 500px) {
+    .panel {
+      min-height: 60px;
+    }
+    
+    #log {
+      max-height: 40px;
+    }
+    
+    /* Ensure scrollbars are always visible on very small screens */
+    .panel.scrollable::-webkit-scrollbar-thumb {
+      background: #234 !important;
+    }
+  }
+  
+  /* Handle landscape orientation on small screens */
+  @media (max-width: 900px) and (orientation: landscape) {
+    .panel {
+      min-height: 80px;
+    }
+    
+    #log {
+      max-height: 60px;
+    }
+  }
+
+@media (max-width: 1000px) {
+  #ui {
+    width: 350px;
+    min-width: 300px;
+  }
+  
+  #gameWrap {
+    gap: 6px;
+    padding: 6px;
+  }
+  
+  .panel {
+    padding: 8px;
+  }
+  
+  .slot {
+    width: 48px;
+    height: 48px;
+  }
+  
+  .pd-slot {
+    width: 48px;
+    height: 48px;
+    border: 1px solid #234;
+    background: #061218;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    box-sizing: border-box;
+  }
+  
+  .pd-slot .itemIcon {
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+    display: block;
+  }
+  
+  /* Ensure equipment slots are visible and properly styled */
+  .pd-slot.equipSlot {
+    border: 1px solid #234;
+    background: #061218;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    box-sizing: border-box;
+  }
+  
+  .pd-slot.equipSlot .itemIcon {
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+    display: block;
+  }
+}
+
+@media (max-width: 900px) {
+  #gameWrap {
+    flex-direction: column;
+    height: 100vh;
+    min-height: 100vh;
+    max-height: 100vh;
+    overflow: hidden;
+  }
+  
+  canvas {
+    height: 45vh;
+    min-height: 300px;
+    max-height: 45vh;
+    flex-shrink: 0;
+  }
+  
+  #ui {
+    width: 100%;
+    max-width: none;
+    min-width: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+    height: 55vh;
+    overflow: hidden;
+  }
+  
+  .panel {
+    flex: 1 1 300px;
+    min-width: 300px;
+    max-height: 100%;
+    overflow: hidden;
+  }
+  
+  #chatOverlay {
+    width: 300px;
+    left: 8px;
+    bottom: 8px;
+  }
+}
+
+/* Tooltip: unchanged look, but we'll clamp in JS */
+.tooltip{
+  position:fixed;
+  background:rgba(8,19,26,0.92);
+  border:1px solid rgba(36,68,52,0.6);
+  padding:10px;
+  border-radius:6px;
+  pointer-events:none;
+  z-index:9999;                /* ensure above canvas & overlay */
+  display:none;
+  color:#cfeeff;
+  min-width:220px
+}
+
+/* Chat overlay over canvas (bottom-left) */
+#chatOverlay{
+  position:fixed;
+  left:16px;
+  bottom:16px;
+  width:380px;
+  z-index:5000;                /* above canvas */
+  background:rgba(3,19,26,0.80);
+  border:1px solid #123;
+  border-radius:8px;
+  padding:8px;
+  box-shadow:0 6px 18px rgba(0,0,0,0.5);
+}
+#chatOverlay #chatBox{
+  height:140px;
+  overflow:auto;
+  background:transparent;      /* already translucent via parent */
+  padding:4px;
+  border-radius:6px;
+}
+#chatOverlay #chatInput{
+  width:100%;
+  box-sizing:border-box;
+  padding:6px;
+  margin-top:6px;
+  border-radius:6px;
+  border:1px solid #234;
+  background:#071018;
+  color:#e6f7ff
+}
+
+
+  .panel{background:var(--panel);padding:10px;border-radius:8px;border:1px solid #12323d;overflow:hidden}
+  
+  /* Add scrollbars to panels when they become too small vertically */
+  .panel.scrollable {
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  
+  /* Custom scrollbar styling for panels */
+  .panel.scrollable::-webkit-scrollbar {
+    width: 8px;
+  }
+  
+  .panel.scrollable::-webkit-scrollbar-track {
+    background: #061218;
+    border-radius: 4px;
+  }
+  
+  .panel.scrollable::-webkit-scrollbar-thumb {
+    background: #234;
+    border-radius: 4px;
+  }
+  
+  .panel.scrollable::-webkit-scrollbar-thumb:hover {
+    background: #456;
+  }
+  
+  /* Firefox scrollbar styling */
+  .panel.scrollable {
+    /* Temporarily disabled to fix rendering issue */
+    /* scrollbar-width: thin; */
+    /* scrollbar-color: #234 #061218; */
+  }
+  
+  /* Ensure panels maintain layout when scrollbars appear */
+  .panel.scrollable {
+    /* Temporarily disabled to fix rendering issue */
+    /* padding-right: 8px; */ /* Compensate for scrollbar width */
+  }
+  
+  /* Hide scrollbar when not needed but keep functionality */
+  .panel.scrollable:not(:hover)::-webkit-scrollbar-thumb {
+    /* Temporarily disabled to fix rendering issue */
+    /* background: transparent; */
+  }
+  
+  .panel.scrollable:hover::-webkit-scrollbar-thumb {
+    /* Temporarily disabled to fix rendering issue */
+    /* background: #234; */
+  }
+  
+  /* Ensure content doesn't get cut off by scrollbars */
+  .panel.scrollable > * {
+    /* Temporarily disabled to fix rendering issue */
+    /* max-width: calc(100% - 8px); */
+  }
+  h2{margin:0 0 8px 0;font-size:14px}
+  #log{height:110px;overflow:hidden;font-size:13px;padding:6px;background:#02060a;border-radius:6px;max-height:110px}
+  .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+  .stat{display:flex;justify-content:space-between;padding:6px;background:#05202a;border-radius:6px}
+  #inventory{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .slot{width:var(--slot-size);height:var(--slot-size);border:1px solid #234;background:#061218;border-radius:6px;display:flex;align-items:center;justify-content:center;padding:var(--slot-pad);box-sizing:border-box}
+  .slot .itemIcon{width:var(--item-size);height:var(--item-size);object-fit:contain;display:block}
+  .paperdoll{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .pd-slot{width:var(--slot-size);height:var(--slot-size);border:1px solid #234;background:#061218;border-radius:6px;display:flex;align-items:center;justify-content:center;padding:var(--slot-pad);box-sizing:border-box}
+  .pd-slot .itemIcon{width:var(--item-size);height:var(--item-size);object-fit:contain;display:block}
+  
+  /* Responsive inventory grid */
+  @media (max-width: 1000px) {
+    #inventory {
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+    
+    .paperdoll {
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+  }
+  
+  @media (max-width: 900px) {
+    #inventory {
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+    
+    .paperdoll {
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+  }
+  .pd-label{font-size:11px;color:var(--muted);text-align:center;margin-top:6px}
+  .small{font-size:12px;color:var(--muted)}
+  .tooltip{position:fixed;background:rgba(8,19,26,0.92);border:1px solid rgba(36,68,52,0.6);padding:10px;border-radius:6px;pointer-events:none;z-index:999;display:none;color:#cfeeff;min-width:220px}
+  .tooltip .name{font-weight:700;margin-bottom:6px}
+  .tooltip .desc{font-size:12px;color:#bfe7ff;margin-bottom:6px}
+  .tooltip .statline{font-size:12px}
+  .r-common{color:var(--rarity-common)} .r-uncommon{color:var(--rarity-uncommon)} .r-epic{color:var(--rarity-epic)} .r-legendary{color:var(--rarity-legendary)}
+  #chatBox{height:120px;overflow:auto;background:#03131a;padding:6px;border-radius:6px}
+  #chatInput{width:100%;box-sizing:border-box;padding:6px;margin-top:6px;border-radius:6px;border:1px solid #234;background:#071018;color:#e6f7ff}
+  button{background:#0b2230;color:#bfe7ff;border:1px solid #1f5a72;padding:6px;border-radius:6px}
+  input.keybind{width:120px}
+  .icon{width:20px;height:20px;display:inline-block}
+  #shopPanel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:#051318;border:1px solid #234;padding:12px;border-radius:8px;display:none;z-index:1000;width:720px}
+  #shopPanel .row{display:flex;justify-content:space-between;padding:6px;border-bottom:1px solid #123}
+  #shopPanel .sell-all-button{background:#dc3545;color:white;border:1px solid #c82333;padding:8px 16px;border-radius:4px;cursor:pointer;font-weight:bold;transition:background-color 0.2s}
+  #shopPanel .sell-all-button:hover{background:#c82333}
+  #keybinds{display:flex;gap:6px;flex-wrap:wrap}
+  .kb{background:#06222a;padding:6px;border-radius:6px;border:1px solid #123;color:#bfe7ff}
+  
+  /* Hide elements when not connected */
+  .connected-only { display: none; }
+  .connected-only.visible { display: block; }
+  
+  /* Ensure viewport constraints */
+  * {
+    box-sizing: border-box;
+  }
+  
+  /* Prevent any element from causing scroll */
+  body > * {
+    max-width: 100vw;
+    max-height: 100vh;
+  }
+</style>
+</head>
+<body>
+<!-- Connection Screen -->
+<div id="connectionScreen">
+  <div class="connectionPanel">
+    <h1>Browseron's Call</h1>
+    <div class="inputGroup">
+      <label for="loginPlayerName">Player Name:</label>
+      <input id="loginPlayerName" type="text" placeholder="Enter your name" value="Player" />
+    </div>
+    <div class="inputGroup">
+      <label for="loginServerUrl">Server URL:</label>
+      <input id="loginServerUrl" type="text" placeholder="ws://localhost:8081" value="ws://localhost:8081" />
+    </div>
+    <button id="loginConnectBtn">Connect to Game</button>
+  </div>
+</div>
+
+<div id="gameWrap">
+  <canvas id="game" width="800" height="600" tabindex="0"></canvas>
+  <div id="ui">
+    <div class="panel">
+      <h2>Player & Stats</h2>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div style="flex:1">
+          <div style="display:flex;gap:8px;align-items:center">
+            <div class="small">Name:</div>
+            <span id="playerNameDisplay" class="connected-only">Player</span>
+          </div>
+          <div class="stats" id="pstats"></div>
+          <div style="margin-top:6px" class="small">Pyreals: <span id="goldAmt">0</span></div>
+        </div>
+        <div style="width:240px">
+          <div class="connected-only visible">
+            <div style="margin-top:6px"><button id="disconnectBtnOnly">Disconnect</button></div>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:8px">
+        <strong>Keybindings</strong>
+        <div id="keybinds"></div>
+        <div style="margin-top:6px" class="small">Click a key box and press a key to rebind. Rebinds persist to localStorage.</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Inventory</h2>
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <div style="flex:1">
+          <div class="small">Bag slots (double-click to equip, drag onto the game canvas to drop)</div>
+          <div id="inventory"></div>
+        </div>
+        <div style="width:240px">
+          <div class="small">Paper Doll (double-click to unequip)</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+            <div style="display:flex;flex-direction:column;align-items:center"><div class="pd-slot equipSlot" data-slot="head" title="Head"></div><div class="pd-label">Head</div></div>
+            <div style="display:flex;flex-direction:column;align-items:center"><div class="pd-slot equipSlot" data-slot="neck" title="Neck"></div><div class="pd-label">Neck</div></div>
+            <div style="display:flex;flex-direction:column;align-items:center"><div class="pd-slot equipSlot" data-slot="shoulders" title="Shoulders"></div><div class="pd-label">Shoulders</div></div>
+            <div style="display:flex;flex-direction:column;align-items:center"><div class="pd-slot equipSlot" data-slot="chest" title="Chest"></div><div class="pd-label">Chest</div></div>
+            <div style="display:flex;flex-direction:column;align-items:center"><div class="pd-slot equipSlot" data-slot="waist" title="Waist"></div><div class="pd-label">Waist</div></div>
+            <div style="display:flex;flex-direction:column;align-items:center"><div class="pd-slot equipSlot" data-slot="legs" title="Legs"></div><div class="pd-label">Legs</div></div>
+            <div style="display:flex;flex-direction:column;align-items:center"><div class="pd-slot equipSlot" data-slot="feet" title="Feet"></div><div class="pd-label">Feet</div></div>
+            <div style="display:flex;flex-direction:column;align-items:center"><div class="pd-slot equipSlot" data-slot="wrists" title="Wrists"></div><div class="pd-label">Wrists</div></div>
+            <div style="display:flex;flex-direction:column;align-items:center"><div class="pd-slot equipSlot" data-slot="hands" title="Hands"></div><div class="pd-label">Hands</div></div>
+            <div style="display:flex;flex-direction:column;align-items:center"><div class="pd-slot equipSlot" data-slot="mainhand" title="Main Hand"></div><div class="pd-label">Main Hand</div></div>
+            <div style="display:flex;flex-direction:column;align-items:center"><div class="pd-slot equipSlot" data-slot="offhand" title="Off Hand"></div><div class="pd-label">Off Hand</div></div>
+            <div style="display:flex;flex-direction:column;align-items:center"><div class="pd-slot equipSlot" data-slot="trinket" title="Trinket"></div><div class="pd-label">Trinket</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Logs & Controls</h2>
+      <div id="log"></div>
+      <div style="margin-top:6px;display:flex;gap:6px">
+        <button id="spawnEnemy">Spawn Enemy</button>
+        <button id="clearDrops">Clear Drops</button>
+      </div>
+    </div>
+
+    <div class="panel small">NPC: Press <strong>F</strong> near the vendor to open shop. Sell items for Pyreals. Drag items from your bag onto the canvas to <strong>drop</strong> them into the world.</div>
+
+    </div>
+</div>
+
+<div id="tooltip" class="tooltip"></div>
+<div id="shopPanel"><div id="shopList"></div><div style="margin-top:8px;text-align:right"><button id="closeShop">Close</button></div></div>
+<div id="chatOverlay">
+  <div id="chatBox"></div>
+  <input id="chatInput" placeholder="Type message and press Enter" />
+</div>
+
+<script>
+window.onerror=(m,s,l,c,e)=>{const el=document.getElementById('log'); if(el){ el.innerHTML = `<div style='color:#ff8a8a'>JS Error: ${String(m)}</div>` + el.innerHTML; }}
+window.onunhandledrejection=(ev)=>{const el=document.getElementById('log'); if(el){ el.innerHTML = `<div style='color:#ffb38a'>Unhandled: ${String(ev.reason)}</div>` + el.innerHTML; }}
+
+// Handle window resizing to ensure UI always fits without scrolling
+function handleResize() {
+  const gameWrap = document.getElementById('gameWrap');
+  const ui = document.getElementById('ui');
+  const canvas = document.getElementById('game');
+  
+  if (!gameWrap || !ui || !canvas) return;
+  
+  const windowWidth = window.innerWidth;
+  const windowHeight = window.innerHeight;
+  
+  // Ensure minimum usable dimensions without scrolling
+  if (windowWidth < 800) {
+    gameWrap.style.minWidth = '800px';
+    gameWrap.style.overflowX = 'hidden';
+    gameWrap.style.overflowY = 'hidden';
+  } else {
+    gameWrap.style.minWidth = 'auto';
+    gameWrap.style.overflowX = 'hidden';
+    gameWrap.style.overflowY = 'hidden';
+  }
+  
+  // Adjust UI panel sizing for very small screens
+  if (windowWidth < 900) {
+    ui.style.width = '100%';
+    ui.style.maxWidth = 'none';
+    ui.style.height = '55vh';
+    ui.style.overflow = 'hidden';
+  } else if (windowWidth < 1200) {
+    ui.style.width = '400px';
+    ui.style.height = 'auto';
+    ui.style.overflow = 'visible';
+  } else {
+    ui.style.width = '520px';
+    ui.style.height = 'auto';
+    ui.style.overflow = 'visible';
+  }
+  
+  // Ensure canvas has reasonable dimensions
+  if (windowHeight < 600) {
+    canvas.style.minHeight = '300px';
+    canvas.style.maxHeight = '45vh';
+  } else {
+    canvas.style.minHeight = 'auto';
+    canvas.style.maxHeight = 'none';
+  }
+  
+  // Force no scrolling on body and html
+  document.body.style.overflow = 'hidden';
+  document.documentElement.style.overflow = 'hidden';
+}
+
+// Call on load and resize
+window.addEventListener('load', handleResize);
+window.addEventListener('resize', handleResize);
+
+// Prevent scrolling on all events
+function preventScroll(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  return false;
+}
+
+// Prevent scrolling on various events
+window.addEventListener('scroll', preventScroll, { passive: false });
+window.addEventListener('wheel', preventScroll, { passive: false });
+window.addEventListener('touchmove', preventScroll, { passive: false });
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'PageUp' || e.key === 'PageDown' || e.key === 'Home' || e.key === 'End') {
+    e.preventDefault();
+  }
+});
+
+// Ensure no scrolling on DOM ready
+document.addEventListener('DOMContentLoaded', () => {
+  document.body.style.overflow = 'hidden';
+  document.documentElement.style.overflow = 'hidden';
+});
+</script>
+<script src="./js/methods.js"></script>
+<script src="./js/ui.js"></script>
+<script src="./js/network.js"></script>
+<script src="./js/engine.js"></script>
+</body>
+</html>

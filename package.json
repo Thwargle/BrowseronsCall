@@ -1,0 +1,24 @@
+{
+  "name": "browsersons-call-server",
+  "version": "1.0.0",
+  "description": "Multiplayer server for Browseron's Call game",
+  "main": "Working/js/server.js",
+  "scripts": {
+    "start": "node Working/js/server.js",
+    "start:http": "node Working/js/server.js",
+    "start:https": "set HTTPS_PORT=8443 && node Working/js/server.js",
+    "dev": "npx nodemon Working/js/server.js",
+    "dev:http": "npx nodemon Working/js/server.js",
+    "dev:https": "set HTTPS_PORT=8443 && npx nodemon Working/js/server.js"
+  },
+  "dependencies": {
+    "ws": "^8.14.2",
+    "selfsigned": "^2.4.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "keywords": ["game", "multiplayer", "websocket", "2d", "rpg"],
+  "author": "Your Name",
+  "license": "MIT"
+}
