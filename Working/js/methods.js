@@ -1351,91 +1351,7 @@ window.spawnDrop = function (x, y, item, vx = 0, vy = 0) {
   return d;
 };
 
-// Notify server when equipment changes so other clients can render it
-if (typeof window !== 'undefined') {
-  const origSwapEquipWithBag = window.swapEquipWithBag;
-  window.swapEquipWithBag = function(slotIdx){
-    const res = origSwapEquipWithBag.apply(this, arguments);
-    try { 
-      if (window.isConnected && window.isConnected()) {
-        wsSend({ type: 'equipUpdate', equip: window.equip });
-        // Also send visual update
-        wsSend({ 
-          type: 'visualUpdate', 
-          shirtColor: window.BASE ? window.BASE.shirtColor : null,
-          pantColor: window.BASE ? window.BASE.pantColor : null,
-          equipmentColors: window.getEquipmentColors ? window.getEquipmentColors() : {}
-        });
-        // Send reach update since equipment affects reach
-        if (window.player && window.player._reach) {
-          wsSend({ 
-            type: 'playerUpdate', 
-            reach: window.player._reach 
-          });
-        }
-      }
-    } catch(_){}
-    return res;
-  };
-  const origSwapUnequip = window.swapUnequip;
-  window.swapUnequip = function(slot){
-    const res = origSwapUnequip.apply(this, arguments);
-    try { 
-      // Update reach calculation immediately when equipment changes
-      if (window.player && typeof window.player.calculateReach === 'function') {
-        window.player.calculateReach();
-      }
-      
-      if (window.isConnected && window.isConnected()) {
-        wsSend({ type: 'equipUpdate', equip: window.equip });
-        // Also send visual update
-        wsSend({ 
-          type: 'visualUpdate', 
-          shirtColor: window.BASE ? window.BASE.shirtColor : null,
-          pantColor: window.BASE ? window.BASE.pantColor : null,
-          equipmentColors: window.getEquipmentColors ? window.getEquipmentColors() : {}
-        });
-        // Send reach update since equipment affects reach
-        if (window.player && window.player._reach) {
-          wsSend({ 
-            type: 'playerUpdate', 
-            reach: window.player._reach 
-          });
-        }
-      }
-    } catch(_){}
-    return res;
-  };
-  const origHandleEquipDrop = window.handleEquipDrop;
-  window.handleEquipDrop = function(id,slot){
-    const res = origHandleEquipDrop.apply(this, arguments);
-    try { 
-      // Update reach calculation immediately when equipment changes
-      if (window.player && typeof window.player.calculateReach === 'function') {
-        window.player.calculateReach();
-      }
-      
-      if (window.isConnected && window.isConnected()) {
-        wsSend({ type: 'equipUpdate', equip: window.equip });
-        // Also send visual update
-        wsSend({ 
-          type: 'visualUpdate', 
-          shirtColor: window.BASE ? window.BASE.shirtColor : null,
-          pantColor: window.BASE ? window.BASE.pantColor : null,
-          equipmentColors: window.getEquipmentColors ? window.getEquipmentColors() : {}
-        });
-        // Send reach update since equipment affects reach
-        if (window.player && window.player._reach) {
-          wsSend({ 
-            type: 'playerUpdate', 
-            reach: window.player._reach 
-          });
-        }
-      }
-    } catch(_){}
-    return res;
-  };
-}
+// Equipment management moved to equipment.js
 
 
 // Player & Enemy classes
@@ -1857,13 +1773,8 @@ Player.prototype.dropMostValuableItem = function() {
             }
         } else if (itemSource === 'equipment') {
             window.equip[itemSlot] = null;
-            // Update server
-            if (window.isConnected && window.isConnected() && typeof window.wsSend === 'function') {
-                window.wsSend({
-                    type: 'equipUpdate',
-                    equip: window.equip
-                });
-            }
+            // Don't send equipUpdate here - let the server handle equipment updates
+            // The server is authoritative for equipment state
         }
         
         // Create world drop at player's current position

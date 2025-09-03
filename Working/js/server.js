@@ -882,15 +882,9 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                     break;
 
                 case 'equipUpdate':
-                    if (playerId && gameState.players.has(playerId) && data.equip) {
-                        const player = gameState.players.get(playerId);
-                        player.equip = data.equip;
-                        console.log(`Equipment updated for ${player.name}:`, JSON.stringify(player.equip, null, 2));
-                        // Save player data immediately when equipment changes
-                        savePlayerData(player.name, player);
-                        // broadcast to all players so they can render current equipment
-                        broadcastToAll({ type: 'equipUpdate', id: playerId, equip: player.equip, reach: player.reach });
-                    }
+                    // Equipment updates are now handled server-side via moveItem operations
+                    // Clients should not send equipUpdate messages - server is authoritative
+                    console.log(`Ignoring equipUpdate from ${playerName} - server is authoritative for equipment state`);
                     break;
 
                 case 'inventoryUpdate':

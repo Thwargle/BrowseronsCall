@@ -48,12 +48,8 @@ window.wsConnect = function(url) {
                 equipmentColors: window.getEquipmentColors ? window.getEquipmentColors() : {}
             }));
             
-            // Send current equipment snapshot so others can render us
-            try {
-                if (window.equip) {
-                    socket.send(JSON.stringify({ type: 'equipUpdate', equip: window.equip }));
-                }
-            } catch (_) {}
+            // Don't send equipment snapshot on connection - let server send authoritative equipment data
+            // The server will send playerData with equipment after connection
             
             // Update UI to show connected state
             updateConnectionUI();
@@ -876,15 +872,11 @@ window.handleServerMessage = function(msg) {
                         window.equip = {head:null,neck:null,shoulders:null,chest:null,waist:null,legs:null,feet:null,wrists:null,hands:null,mainhand:null,offhand:null,trinket:null};
                     }
                     
-                    // Merge server equipment data with existing local equipment
-                    // This preserves existing equipped items while updating changed ones
-                    Object.keys(msg.equip).forEach(slot => {
-                        if (msg.equip[slot] !== undefined) {
-                            window.equip[slot] = msg.equip[slot];
-                        }
-                    });
+                    // Server is authoritative - replace entire equipment object
+                    // This ensures consistency with server state
+                    window.equip = { ...msg.equip };
                     
-                    console.log('Merged server equipment with local equipment:', window.equip);
+                    console.log('Updated local equipment from server:', window.equip);
                     
                     // Update reach calculation immediately when equipment changes
                     if (window.player && typeof window.player.calculateReach === 'function') {

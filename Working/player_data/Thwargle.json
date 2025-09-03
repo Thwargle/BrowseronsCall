@@ -1,13 +1,28 @@
 {
   "id": "Thwargle",
   "name": "Thwargle",
-  "x": 857.820719999963,
-  "y": 416,
-  "health": 332,
-  "maxHealth": 332,
-  "pyreals": 4099,
+  "x": 1101.7316800000456,
+  "y": 356,
+  "health": 472.7355791000056,
+  "maxHealth": 545,
+  "pyreals": 4132,
   "equip": {
-    "head": null,
+    "head": {
+      "id": "armor-1756913846967-n8nr4a364",
+      "name": "Head",
+      "type": "armor",
+      "level": 3,
+      "rarity": "Rare",
+      "short": "Rare head armor piece with enhanced protection",
+      "slot": "head",
+      "stats": {
+        "Endurance": 9,
+        "Health": 5,
+        "Coordination": 2
+      },
+      "value": 72,
+      "icon": null
+    },
     "neck": null,
     "shoulders": {
       "id": "armor-1756882056972-eyzhcml23",
@@ -90,8 +105,94 @@
       "value": 36,
       "icon": null
     },
-    "hands": null,
+    "hands": {
+      "id": "armor-1756913852384-3ev97fm80",
+      "name": "Simple Hands of the Peasant",
+      "type": "armor",
+      "level": 5,
+      "rarity": "Common",
+      "short": "Common hands armor piece with enhanced protection",
+      "slot": "hands",
+      "stats": {
+        "Endurance": 7,
+        "Quickness": 5,
+        "Coordination": 4
+      },
+      "value": 60,
+      "icon": null
+    },
     "mainhand": {
+      "id": "weapon-1756913846085-toxw14anp",
+      "name": "Masterwork Bow of the Hero",
+      "type": "weapon",
+      "level": 6,
+      "rarity": "Epic",
+      "short": "Epic bow with enhanced properties",
+      "stats": {
+        "Coordination": 15,
+        "Quickness": 7
+      },
+      "dmgMin": 32,
+      "dmgMax": 49,
+      "value": 270,
+      "icon": null,
+      "subtype": "Bow"
+    },
+    "offhand": {
+      "id": "weapon-1756913852384-s4v3b5w3d",
+      "name": "Sacred Sword of the Legend",
+      "type": "weapon",
+      "level": 8,
+      "rarity": "Legendary",
+      "short": "Legendary sword with enhanced properties",
+      "stats": {
+        "Strength": 20,
+        "Endurance": 10
+      },
+      "dmgMin": 60,
+      "dmgMax": 90,
+      "value": 840,
+      "icon": null,
+      "subtype": "Sword"
+    },
+    "trinket": null
+  },
+  "inventory": [
+    {
+      "id": "weapon-1756913844699-4omhi3uk5",
+      "name": "Solid Warhammer of the Fighter",
+      "type": "weapon",
+      "level": 2,
+      "rarity": "Uncommon",
+      "short": "Uncommon warhammer with enhanced properties",
+      "stats": {
+        "Strength": 6,
+        "Endurance": 2
+      },
+      "dmgMin": 7,
+      "dmgMax": 11,
+      "value": 45,
+      "icon": null,
+      "subtype": "Warhammer"
+    },
+    {
+      "id": "weapon-1756913846085-ikw68la2x",
+      "name": "Durable Hammer of the Fighter",
+      "type": "weapon",
+      "level": 6,
+      "rarity": "Uncommon",
+      "short": "Uncommon hammer with enhanced properties",
+      "stats": {
+        "Strength": 12,
+        "Endurance": 7
+      },
+      "dmgMin": 22,
+      "dmgMax": 32,
+      "value": 135,
+      "icon": null,
+      "subtype": "Hammer"
+    },
+    {
       "id": "weapon-1756881928942-w2k0grq5p",
       "name": "Exceptional Bow of the Master",
       "type": "weapon",
@@ -108,7 +209,25 @@
       "icon": null,
       "subtype": "Bow"
     },
-    "offhand": {
+    {
+      "id": "weapon-1756913846967-cqrhuoeme",
+      "name": "Crude Spear of the Peasant",
+      "type": "weapon",
+      "level": 5,
+      "rarity": "Common",
+      "short": "Common spear with enhanced properties",
+      "stats": {
+        "Strength": 6,
+        "Quickness": 6
+      },
+      "dmgMin": 15,
+      "dmgMax": 23,
+      "value": 75,
+      "icon": null,
+      "subtype": "Spear"
+    },
+    null,
+    {
       "id": "weapon-1756881742524-wxlpunzk5",
       "name": "Solid Spear of the Fighter",
       "type": "weapon",
@@ -125,15 +244,6 @@
       "icon": null,
       "subtype": "Spear"
     },
-    "trinket": null
-  },
-  "inventory": [
-    null,
-    null,
-    null,
-    null,
-    null,
-    null,
     null,
     null,
     null,
@@ -141,9 +251,15 @@
     null,
     null
   ],
-  "shirtColor": "#8b4513",
-  "pantColor": "#2f4f4f",
+  "shirtColor": "#bdb76b",
+  "pantColor": "#1a202c",
   "equipmentColors": {
+    "head": {
+      "type": "armor",
+      "rarity": "Rare",
+      "slot": "head",
+      "material": "metal"
+    },
     "shoulders": {
       "type": "armor",
       "rarity": "Legendary",
@@ -174,6 +290,12 @@
       "slot": "wrists",
       "material": "metal"
     },
+    "hands": {
+      "type": "armor",
+      "rarity": "Common",
+      "slot": "hands",
+      "material": "metal"
+    },
     "mainhand": {
       "type": "weapon",
       "rarity": "Epic",
@@ -181,9 +303,9 @@
     },
     "offhand": {
       "type": "weapon",
-      "rarity": "Uncommon",
-      "material": "Spear"
+      "rarity": "Legendary",
+      "material": "Sword"
     }
   },
-  "lastSaved": 1756882093730
+  "lastSaved": 1756913951574
 }
