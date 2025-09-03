@@ -545,9 +545,19 @@ function initializeEngine() {
         setupCanvasEventListeners();
     }, 2000);
 
-    // Shop open on F
+    // Shop open/close on F or Escape
     window.addEventListener('keydown', e=>{ 
-        if(e.key.toLowerCase()==='f' && window.vendor && window.player){ 
+        const shopPanel = document.getElementById('shopPanel');
+        const isShopOpen = shopPanel && shopPanel.style.display === 'block';
+        
+        // Close shop on Escape or F when shop is open
+        if ((e.key === 'Escape' || e.key.toLowerCase() === 'f') && isShopOpen) {
+            shopPanel.style.display = 'none';
+            return;
+        }
+        
+        // Open shop on F when near vendor and shop is closed
+        if(e.key.toLowerCase()==='f' && window.vendor && window.player && !isShopOpen){ 
             const px=window.player.x+window.player.w/2, py=window.player.y+window.player.h/2; 
             const vx=window.vendor.x+window.vendor.w/2, vy=window.vendor.y+window.vendor.h/2; 
             if(Math.hypot(px-vx, py-vy) < 80){ 
@@ -1140,6 +1150,54 @@ function initializeEngine() {
                     // Fallback to basic character drawing if no colors from server
                     drawCharacter(currentCtx,{timer:0,index:0},enemy.x||0,enemy.y||0,48,64,dt,(enemy.vx||0)<0,moving,air,{}); 
                 }
+                
+                // Add spellcaster visual effects
+                if (enemy.type === 'spellcaster') {
+                    // Add magical aura around spellcaster
+                    const time = Date.now() * 0.005;
+                    const auraSize = 8 + Math.sin(time * 2) * 3;
+                    
+                    // Magical glow effect
+                    currentCtx.shadowColor = '#8A2BE2'; // Blue-violet
+                    currentCtx.shadowBlur = 15;
+                    currentCtx.globalCompositeOperation = 'screen';
+                    
+                    // Draw magical particles around the spellcaster
+                    for (let i = 0; i < 6; i++) {
+                        const angle = (time * 0.5 + i * Math.PI / 3) % (Math.PI * 2);
+                        const radius = 35 + Math.sin(time * 3 + i) * 5;
+                        const particleX = enemy.x + Math.cos(angle) * radius;
+                        const particleY = enemy.y + Math.sin(angle) * radius;
+                        
+                        currentCtx.fillStyle = `rgba(138, 43, 226, ${0.6 + Math.sin(time * 4 + i) * 0.3})`;
+                        currentCtx.beginPath();
+                        currentCtx.arc(particleX, particleY, auraSize * 0.3, 0, Math.PI * 2);
+                        currentCtx.fill();
+                    }
+                    
+                    // Add spellcasting indicator if attack cooldown is low (about to cast)
+                    if (enemy.attackCooldown !== undefined && enemy.attackCooldown < 0.5) {
+                        // Draw spellcasting charge effect
+                        const chargeIntensity = 1 - (enemy.attackCooldown / 0.5);
+                        currentCtx.fillStyle = `rgba(255, 255, 0, ${chargeIntensity * 0.8})`;
+                        currentCtx.beginPath();
+                        currentCtx.arc(enemy.x + 24, enemy.y - 10, 15 + chargeIntensity * 10, 0, Math.PI * 2);
+                        currentCtx.fill();
+                        
+                        // Draw wand glow
+                        currentCtx.strokeStyle = `rgba(255, 255, 0, ${chargeIntensity})`;
+                        currentCtx.lineWidth = 3;
+                        currentCtx.beginPath();
+                        currentCtx.moveTo(enemy.x + 24, enemy.y + 10);
+                        currentCtx.lineTo(enemy.x + 24 + (enemy.vx < 0 ? -20 : 20), enemy.y + 10);
+                        currentCtx.stroke();
+                    }
+                    
+                    // Reset composite operation
+                    currentCtx.globalCompositeOperation = 'source-over';
+                    currentCtx.shadowBlur = 0;
+                }
+                
                 currentCtx.restore();
                 
                 currentCtx.fillStyle='#000'; 
@@ -1153,7 +1211,16 @@ function initializeEngine() {
                     currentCtx.fillStyle='#000'; 
                     currentCtx.font='10px monospace';
                     currentCtx.textAlign='center';
-                    currentCtx.fillText(enemy.name, enemy.x||0, (enemy.y||0)-20);
+                    
+                    // Special styling for spellcaster enemies
+                    if (enemy.type === 'spellcaster') {
+                        currentCtx.fillStyle='#8A2BE2'; // Purple for spellcasters
+                        currentCtx.font='bold 11px monospace';
+                        currentCtx.fillText('🧙 ' + enemy.name, enemy.x||0, (enemy.y||0)-20);
+                    } else {
+                        currentCtx.fillText(enemy.name, enemy.x||0, (enemy.y||0)-20);
+                    }
+                    
                     currentCtx.textAlign='left'; // Reset alignment
                 }
             } 

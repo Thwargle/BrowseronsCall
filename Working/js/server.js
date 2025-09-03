@@ -141,6 +141,11 @@ const LOOT_TABLES = {
         currency: { chance: 0.2, amount: [30, 60] },
         weapon: { chance: 0.5, level: [4, 8] },
         armor: { chance: 0.3, level: [4, 6] }
+    },
+    spellcaster: {
+        currency: { chance: 0.3, amount: [20, 40] },
+        weapon: { chance: 0.4, level: [3, 6] },
+        armor: { chance: 0.3, level: [3, 5] }
     }
 };
 
@@ -330,7 +335,8 @@ gameState.spawners = [
     { id: 'sp_1', x: 2600, y: GROUND_Y - 64, currentEnemyId: null, respawnAt: Date.now() + 5000, visibilityRange: 400, type: 'basic' },
     { id: 'sp_2', x: 3000, y: GROUND_Y - 64, currentEnemyId: null, respawnAt: Date.now() + 8000, visibilityRange: 400, type: 'elite' },
     { id: 'sp_3', x: 3300, y: GROUND_Y - 64, currentEnemyId: null, respawnAt: Date.now() + 12000, visibilityRange: 400, type: 'elite' },
-    { id: 'sp_4', x: 3500, y: GROUND_Y - 64, currentEnemyId: null, respawnAt: Date.now() + 15000, visibilityRange: 400, type: 'boss' }
+    { id: 'sp_4', x: 3500, y: GROUND_Y - 64, currentEnemyId: null, respawnAt: Date.now() + 15000, visibilityRange: 400, type: 'boss' },
+    { id: 'sp_5', x: 2800, y: GROUND_Y - 64, currentEnemyId: null, respawnAt: Date.now() + 10000, visibilityRange: 500, type: 'spellcaster' }
 ];
 
 // Function to generate loot based on enemy type and level
@@ -1792,18 +1798,20 @@ const positionSaveInterval = setInterval(() => {
 httpWss.on('close', () => {
     clearInterval(interval);
     clearInterval(positionSaveInterval);
+    clearInterval(gameLoopInterval);
 });
 
 if (httpsWss) {
     httpsWss.on('close', () => {
         clearInterval(interval);
         clearInterval(positionSaveInterval);
+        clearInterval(gameLoopInterval);
     });
 }
 
 // Simple server-authoritative enemy AI + spawn tick
 let lastEnemyTick = Date.now();
-setInterval(() => {
+const gameLoopInterval = setInterval(() => {
     const now = Date.now();
     const dt = Math.min(0.016, (now - lastEnemyTick) / 1000);
     lastEnemyTick = now;
@@ -1900,14 +1908,55 @@ setInterval(() => {
             const dx = (nearest.x || 0) - (enemy.x || 0);
             const dy = (nearest.y || 0) - (enemy.y || 0);
             const dist = Math.hypot(dx, dy);
-            if (dist <= 80) { // Increased attack range - use <= for edge case
-                const dmg = 12 + (enemy.level || 1) * 2;
-                const p = gameState.players.get(nearest.id);
-                if (p) {
-                    p.health = Math.max(0, (p.health || p.maxHealth || 100) - dmg);
-                    enemy.attackCooldown = 0.6; // seconds
+            
+            // Spellcaster behavior - cast spells at range instead of melee
+            if (enemy.type === 'spellcaster') {
+                // Cast spell if player is within spell range (200-400 pixels)
+                if (dist >= 200 && dist <= 400) {
+                    const p = gameState.players.get(nearest.id);
+                    if (p) {
+                        // Create enemy fireball projectile
+                        const direction = dx > 0 ? 'right' : 'left';
+                        const projectile = {
+                            id: `enemy-fireball-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                            type: 'fireball',
+                            x: enemy.x + (direction === 'right' ? 32 : -8),
+                            y: enemy.y + 16,
+                            vx: direction === 'right' ? 600 : -600, // Slightly slower than player fireballs
+                            vy: 0,
+                            damage: 15 + (enemy.level || 1) * 3, // Higher damage than player fireballs
+                            playerId: enemy.id, // Use enemy ID to identify enemy projectiles
+                            weaponType: 'Wand',
+                            createdAt: Date.now(),
+                            lifeTime: 5000, // 5 seconds max life
+                            isEnemyProjectile: true // Flag to identify enemy projectiles
+                        };
+                        
+                        // Add to game state
+                        if (!gameState.projectiles) gameState.projectiles = [];
+                        gameState.projectiles.push(projectile);
+                        
+                        // Broadcast projectile creation to all players
+                        const { type: projectileType, ...projectileData } = projectile;
+                        broadcastToAll({
+                            type: 'projectileCreated',
+                            ...projectileData
+                        });
+                        
+                        enemy.attackCooldown = 2.0; // Longer cooldown for spells
+                        console.log(`Spellcaster ${enemy.name} cast fireball at player ${p.name}`);
+                    }
+                }
+            } else {
+                // Regular melee attack for other enemy types
+                if (dist <= 80) { // Increased attack range - use <= for edge case
+                    const dmg = 12 + (enemy.level || 1) * 2;
+                    const p = gameState.players.get(nearest.id);
+                    if (p) {
+                        p.health = Math.max(0, (p.health || p.maxHealth || 100) - dmg);
+                        enemy.attackCooldown = 0.6; // seconds
                     
-                    // Check if player died from this attack
+                        // Check if player died from this attack
                     if (p.health <= 0) {
                         p.isDead = true;
                         p.health = 0;
@@ -1944,10 +1993,11 @@ setInterval(() => {
                         });
                     }
                     
-                    // Notify all clients
-                    broadcastToAll({ type: 'playerHit', id: p.id, health: p.health, byEnemyId: enemy.id, damage: dmg });
-                    // Also broadcast playerUpdate for consistency
-                    broadcastToAll({ type: 'playerUpdate', id: p.id, x: p.x, y: p.y, health: p.health, maxHealth: p.maxHealth, pyreals: p.pyreals });
+                        // Notify all clients
+                        broadcastToAll({ type: 'playerHit', id: p.id, health: p.health, byEnemyId: enemy.id, damage: dmg });
+                        // Also broadcast playerUpdate for consistency
+                        broadcastToAll({ type: 'playerUpdate', id: p.id, x: p.x, y: p.y, health: p.health, maxHealth: p.maxHealth, pyreals: p.pyreals });
+                    }
                 }
             }
         }
@@ -1967,15 +2017,16 @@ setInterval(() => {
                 continue;
             }
             
-            // Check collision with enemies
-            for (const enemy of gameState.enemies) {
-                if (enemy.dead) continue;
-                
-                const dx = projectile.x - enemy.x;
-                const dy = projectile.y - enemy.y;
-                const distance = Math.hypot(dx, dy);
-                
-                if (distance < 32) { // Enemy hit radius
+            // Check collision with enemies (only for player projectiles)
+            if (!projectile.isEnemyProjectile) {
+                for (const enemy of gameState.enemies) {
+                    if (enemy.dead) continue;
+                    
+                    const dx = projectile.x - enemy.x;
+                    const dy = projectile.y - enemy.y;
+                    const distance = Math.hypot(dx, dy);
+                    
+                    if (distance < 32) { // Enemy hit radius
                     // Deal damage
                     enemy.health -= projectile.damage;
                     
@@ -2031,6 +2082,70 @@ setInterval(() => {
                     break;
                 }
             }
+            }
+            
+            // Check collision with players (for enemy projectiles)
+            if (projectile.isEnemyProjectile) {
+                for (const [playerId, player] of gameState.players) {
+                    if (player.isDead) continue;
+                    
+                    const dx = projectile.x - (player.x + 24); // Player center
+                    const dy = projectile.y - (player.y + 32); // Player center
+                    const distance = Math.hypot(dx, dy);
+                    
+                    if (distance < 32) { // Player hit radius
+                        // Deal damage to player
+                        player.health = Math.max(0, (player.health || player.maxHealth || 100) - projectile.damage);
+                        
+                        // Check if player died from this attack
+                        if (player.health <= 0) {
+                            player.isDead = true;
+                            player.health = 0;
+                            
+                            // Drop the most valuable item from inventory/equipment
+                            const droppedItem = dropMostValuableItem(player);
+                            if (droppedItem) {
+                                // Create world drop at player's position
+                                const drop = {
+                                    id: `enemy-death-drop-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                                    x: player.x + 24, // Center of player
+                                    y: player.y + 32,
+                                    item: droppedItem,
+                                    vx: (Math.random() - 0.5) * 100,
+                                    vy: -Math.random() * 100 - 200,
+                                    pickRadius: 40,
+                                    grounded: false,
+                                    noPickupUntil: Date.now() + 3000 // 3 seconds delay
+                                };
+                                gameState.worldDrops.push(drop);
+                                // Broadcast item drop to all players
+                                broadcastToAll({
+                                    type: 'dropItem',
+                                    ...drop
+                                });
+                                console.log(`Player ${player.name} dropped ${droppedItem.name} due to enemy spell`);
+                            }
+                            
+                            // Broadcast death to all players
+                            broadcastToAll({
+                                type: 'playerDeath',
+                                playerId: player.id,
+                                playerName: player.name
+                            });
+                        }
+                        
+                        // Notify all clients
+                        broadcastToAll({ type: 'playerHit', id: player.id, health: player.health, byEnemyId: projectile.playerId, damage: projectile.damage });
+                        // Also broadcast playerUpdate for consistency
+                        broadcastToAll({ type: 'playerUpdate', id: player.id, x: player.x, y: player.y, health: player.health, maxHealth: player.maxHealth, pyreals: player.pyreals });
+                        
+                        // Destroy projectile on hit
+                        projectilesToRemove.push(i);
+                        console.log(`Enemy fireball hit player ${player.name} for ${projectile.damage} damage`);
+                        break;
+                    }
+                }
+            }
             
             // Check collision with environment (ground/platforms)
             if (projectile.y > GROUND_Y) {
@@ -2079,7 +2194,7 @@ setInterval(() => {
             });
         }
     }
-}, 16.67); // 60 ticks per second (1000ms / 60 = 16.67ms)
+}, 16.67); // End of main game loop - 60 ticks per second
 
 // Helper functions
 function dropMostValuableItem(player) {
