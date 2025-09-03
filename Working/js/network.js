@@ -899,9 +899,21 @@ window.handleServerMessage = function(msg) {
                  // Initialize projectiles array if it doesn't exist
                  if (!window.projectiles) window.projectiles = [];
                  
-                 // Add new projectile to local state
-                 const newProjectile = { ...msg };
+                 // Add new projectile to local state (exclude the message type)
+                 const { type: messageType, ...projectileData } = msg;
+                 const newProjectile = { ...projectileData };
                  window.projectiles.push(newProjectile);
+                 
+                 console.log('Added projectile to local array:', newProjectile.type, 'Total projectiles:', window.projectiles.length);
+                 break;
+                 
+             case 'fireball':
+                 // Fallback handler for direct fireball messages (shouldn't happen with fixed server)
+                 console.log('Received direct fireball message (fallback handler)');
+                 if (!window.projectiles) window.projectiles = [];
+                 const fireballProjectile = { ...msg };
+                 window.projectiles.push(fireballProjectile);
+                 console.log('Added fireball projectile via fallback:', fireballProjectile.type, 'Total projectiles:', window.projectiles.length);
                  break;
                  
              case 'projectileUpdate':

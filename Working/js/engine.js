@@ -1258,31 +1258,68 @@ function initializeEngine() {
                     currentCtx.closePath();
                     currentCtx.fill();
                 } else if (projectile.type === 'fireball') {
-                    // Draw animated fireball
+                    // Draw enhanced animated fireball with better visibility
                     const time = Date.now() * 0.01;
-                    const size = 8 + Math.sin(time * 3) * 2; // Pulsing size
+                    const baseSize = 12; // Increased base size
+                    const size = baseSize + Math.sin(time * 4) * 3; // More dramatic pulsing
                     
-                    // Fire effect with multiple layers
-                    currentCtx.fillStyle = '#FF4500'; // Orange-red core
+                    // Outer glow effect for better visibility
+                    currentCtx.shadowColor = '#FF4500';
+                    currentCtx.shadowBlur = 15;
+                    currentCtx.shadowOffsetX = 0;
+                    currentCtx.shadowOffsetY = 0;
+                    
+                    // Bright yellow-white core
+                    currentCtx.fillStyle = '#FFFF00';
+                    currentCtx.beginPath();
+                    currentCtx.arc(projectile.x, projectile.y, size * 0.4, 0, Math.PI * 2);
+                    currentCtx.fill();
+                    
+                    // Orange-red middle layer
+                    currentCtx.fillStyle = '#FF4500';
+                    currentCtx.beginPath();
+                    currentCtx.arc(projectile.x, projectile.y, size * 0.7, 0, Math.PI * 2);
+                    currentCtx.fill();
+                    
+                    // Dark red outer layer
+                    currentCtx.fillStyle = '#CC0000';
                     currentCtx.beginPath();
                     currentCtx.arc(projectile.x, projectile.y, size, 0, Math.PI * 2);
                     currentCtx.fill();
                     
-                    currentCtx.fillStyle = '#FF8C00'; // Darker orange outer layer
-                    currentCtx.beginPath();
-                    currentCtx.arc(projectile.x, projectile.y, size + 2, 0, Math.PI * 2);
-                    currentCtx.fill();
+                    // Reset shadow for particles
+                    currentCtx.shadowBlur = 0;
                     
-                    // Fire particles
-                    currentCtx.fillStyle = '#FFFF00'; // Yellow sparks
-                    for (let i = 0; i < 3; i++) {
-                        const angle = time + i * Math.PI * 2 / 3;
-                        const px = projectile.x + Math.cos(angle) * (size + 4);
-                        const py = projectile.y + Math.sin(angle) * (size + 4);
+                    // Enhanced fire particles with trail effect
+                    currentCtx.fillStyle = '#FFFF00';
+                    for (let i = 0; i < 5; i++) {
+                        const angle = time * 2 + i * Math.PI * 2 / 5;
+                        const radius = size + 6 + Math.sin(time * 6 + i) * 2;
+                        const px = projectile.x + Math.cos(angle) * radius;
+                        const py = projectile.y + Math.sin(angle) * radius;
+                        
+                        // Draw particle with slight trail
+                        currentCtx.globalAlpha = 0.8;
                         currentCtx.beginPath();
-                        currentCtx.arc(px, py, 2, 0, Math.PI * 2);
+                        currentCtx.arc(px, py, 3, 0, Math.PI * 2);
+                        currentCtx.fill();
+                        
+                        // Trail effect
+                        currentCtx.globalAlpha = 0.4;
+                        currentCtx.beginPath();
+                        currentCtx.arc(px - Math.cos(angle) * 2, py - Math.sin(angle) * 2, 2, 0, Math.PI * 2);
                         currentCtx.fill();
                     }
+                    
+                    // Reset alpha
+                    currentCtx.globalAlpha = 1.0;
+                } else {
+                    // Fallback for unknown projectile types - draw a simple circle
+                    console.log('Unknown projectile type:', projectile.type, 'drawing fallback');
+                    currentCtx.fillStyle = '#FF0000'; // Red fallback
+                    currentCtx.beginPath();
+                    currentCtx.arc(projectile.x, projectile.y, 6, 0, Math.PI * 2);
+                    currentCtx.fill();
                 }
                 
                 currentCtx.restore();

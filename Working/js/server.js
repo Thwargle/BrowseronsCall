@@ -1548,7 +1548,7 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                 type: 'arrow',
                                 x: playerX + (direction === 'right' ? 32 : -8),
                                 y: playerY + 16,
-                                vx: direction === 'right' ? 300 : -300,
+                                vx: direction === 'right' ? 600 : -600,
                                 vy: -100, // Initial upward velocity for arc
                                 damage: data.damage || 10,
                                 playerId: playerId,
@@ -1563,7 +1563,7 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                 type: 'fireball',
                                 x: playerX + (direction === 'right' ? 32 : -8),
                                 y: playerY + 16,
-                                vx: direction === 'right' ? 400 : -400,
+                                vx: direction === 'right' ? 800 : -800,
                                 vy: 0, // Straight line
                                 damage: data.damage || 15,
                                 playerId: playerId,
@@ -1579,9 +1579,10 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                             gameState.projectiles.push(projectile);
                             
                             // Broadcast projectile creation to all players
+                            const { type: projectileType, ...projectileData } = projectile;
                             broadcastToAll({
                                 type: 'projectileCreated',
-                                ...projectile
+                                ...projectileData
                             });
                         }
                     }
@@ -1677,6 +1678,48 @@ const interval = setInterval(() => {
         ws.ping();
     });
 }, 30000);
+
+// High-frequency projectile updates for smoothness (60 FPS)
+setInterval(() => {
+    if (gameState.projectiles && gameState.projectiles.length > 0) {
+        const now = Date.now();
+        const dt = 0.016; // 60 FPS
+        
+        for (let i = 0; i < gameState.projectiles.length; i++) {
+            const projectile = gameState.projectiles[i];
+            
+            // Check if projectile has expired
+            if (now - projectile.createdAt > projectile.lifeTime) {
+                continue;
+            }
+            
+            // Apply physics
+            if (projectile.type === 'arrow') {
+                // Arrow has parabolic arc (gravity)
+                projectile.vy += 800 * dt; // gravity
+            }
+            // Fireball goes straight (no gravity)
+            
+            // Update position
+            projectile.x += projectile.vx * dt;
+            projectile.y += projectile.vy * dt;
+        }
+        
+        // Broadcast projectile updates to all clients
+        if (gameState.projectiles.length > 0) {
+            for (const projectile of gameState.projectiles) {
+                broadcastToAll({
+                    type: 'projectileUpdate',
+                    id: projectile.id,
+                    x: projectile.x,
+                    y: projectile.y,
+                    vx: projectile.vx,
+                    vy: projectile.vy
+                });
+            }
+        }
+    }
+}, 16); // 60 FPS updates
 
 // Save player positions every 5 seconds for persistence
 const positionSaveInterval = setInterval(() => {
@@ -1910,7 +1953,7 @@ setInterval(() => {
         }
     }
 
-    // Handle projectile physics and collision detection
+    // Handle projectile collision detection and cleanup (position updates handled by high-frequency loop)
     if (gameState.projectiles && gameState.projectiles.length > 0) {
         const now = Date.now();
         const projectilesToRemove = [];
@@ -1923,17 +1966,6 @@ setInterval(() => {
                 projectilesToRemove.push(i);
                 continue;
             }
-            
-            // Apply physics
-            if (projectile.type === 'arrow') {
-                // Arrow has parabolic arc (gravity)
-                projectile.vy += 800 * dt; // gravity
-            }
-            // Fireball goes straight (no gravity)
-            
-            // Update position
-            projectile.x += projectile.vx * dt;
-            projectile.y += projectile.vy * dt;
             
             // Check collision with enemies
             for (const enemy of gameState.enemies) {
@@ -2017,20 +2049,6 @@ setInterval(() => {
                 type: 'projectileDestroyed',
                 id: destroyedProjectile.id
             });
-        }
-        
-        // Broadcast projectile updates to all clients
-        if (gameState.projectiles.length > 0) {
-            for (const projectile of gameState.projectiles) {
-                broadcastToAll({
-                    type: 'projectileUpdate',
-                    id: projectile.id,
-                    x: projectile.x,
-                    y: projectile.y,
-                    vx: projectile.vx,
-                    vy: projectile.vy
-                });
-            }
         }
     }
 
