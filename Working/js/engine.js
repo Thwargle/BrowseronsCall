@@ -181,12 +181,21 @@ function initializeEngine() {
             }
         };
     }
+    
+    // Calculate initial reach based on starting equipment
+    if (window.player && typeof window.player.calculateReach === 'function') {
+        window.player.calculateReach();
+    }
+    
     console.log('Player initialized:', window.player);
     console.log('Player properties:', {x: window.player.x, y: window.player.y, w: window.player.w, h: window.player.h});
     
     // Local enemies are only used when offline; when connected, we render server enemies from window.remoteEnemies
     window.enemies=[];
     console.log('Initialized local enemies array:', window.enemies);
+
+    // Initialize projectiles array for network-synchronized projectiles
+    window.projectiles = [];
 
     // Initialize vendor with a placeholder - will be overwritten by server data when connected
     // This ensures server-authoritative vendor appearance
@@ -659,7 +668,8 @@ function initializeEngine() {
                     pyreals: window.player.pyreals,
                     shirtColor: window.BASE ? window.BASE.shirtColor : null,
                     pantColor: window.BASE ? window.BASE.pantColor : null,
-                    equipmentColors: window.getEquipmentColors ? window.getEquipmentColors() : {}
+                    equipmentColors: window.getEquipmentColors ? window.getEquipmentColors() : {},
+                    reach: window.player._reach || 70
                 });
             }
         }
@@ -835,7 +845,18 @@ function initializeEngine() {
             // Draw mainhand weapon with swing angle if needed
             if (otherPlayer.equip.mainhand) {
                 const ang = 0; // No swing angle for other players
+                // Temporarily set the player's reach for weapon rendering
+                const originalReach = window.player ? window.player._reach : 70;
+                if (otherPlayer.reach) {
+                    if (window.player) {
+                        window.player._reach = otherPlayer.reach;
+                    }
+                }
                 window.drawWeapon(ctx, X, Y, false, otherPlayer.equip.mainhand, ang);
+                // Restore original reach
+                if (window.player) {
+                    window.player._reach = originalReach;
+                }
             }
         }
         
@@ -889,9 +910,53 @@ function initializeEngine() {
             if (window.equip.mainhand) {
                 const ang = (opts.swingAngle||0); 
                 window.drawWeapon(ctx,X,Y,flip,window.equip.mainhand,ang);
+                
+                // Draw attack range indicator when attacking
+                if (opts.swingAngle !== undefined && opts.swingAngle !== 0) {
+                    drawAttackRangeIndicator(ctx, X, Y, W, H, flip, window.player._reach || 60);
+                }
             }
         } 
         ctx.restore(); 
+    }
+    
+    // Draw attack range indicator to show how far the player can hit
+    function drawAttackRangeIndicator(ctx, x, y, w, h, flip, reach) {
+        ctx.save();
+        
+        // Calculate the center of the character
+        const centerX = x + w / 2;
+        const centerY = y + h / 2;
+        
+        // Convert reach from game units to pixels (reach of 70 = ~100 pixels)
+        const reachPixels = (reach / 70) * 100;
+        
+        // Draw a semi-transparent arc showing the attack range
+        ctx.globalAlpha = 0.3;
+        ctx.strokeStyle = '#ff4444';
+        ctx.lineWidth = 2;
+        
+        // Draw the range indicator as a semi-circle in the direction the player is facing
+        ctx.beginPath();
+        if (flip) {
+            // Facing left - draw arc on the left side
+            ctx.arc(centerX, centerY, reachPixels, Math.PI/2, -Math.PI/2, true);
+        } else {
+            // Facing right - draw arc on the right side
+            ctx.arc(centerX, centerY, reachPixels, -Math.PI/2, Math.PI/2, false);
+        }
+        ctx.stroke();
+        
+        // Draw a small dot at the maximum reach distance
+        ctx.globalAlpha = 0.8;
+        ctx.fillStyle = '#ff4444';
+        if (flip) {
+            ctx.fillRect(centerX - reachPixels - 2, centerY - 2, 4, 4);
+        } else {
+            ctx.fillRect(centerX + reachPixels - 2, centerY - 2, 4, 4);
+        }
+        
+        ctx.restore();
     }
 
     function render(dt){ 
@@ -1049,6 +1114,25 @@ function initializeEngine() {
                 const moving = Math.abs(enemy.vx||0)>5; 
                 const air = false; 
                 
+                // Initialize damage feedback properties if they don't exist
+                if (typeof enemy.damageFlashTimer === 'undefined') {
+                    enemy.damageFlashTimer = 0;
+                }
+                
+                // Update damage flash timer
+                if (enemy.damageFlashTimer > 0) {
+                    enemy.damageFlashTimer -= dt;
+                }
+                
+                // Draw enemy with damage flash effect
+                currentCtx.save();
+                if (enemy.damageFlashTimer > 0) {
+                    // Flash red when taking damage
+                    currentCtx.globalCompositeOperation = 'multiply';
+                    currentCtx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+                    currentCtx.fillRect(enemy.x||0, enemy.y||0, 48, 64);
+                }
+                
                 // Draw enemy as NPC with server-provided colors for consistent appearance
                 if (window.drawNPCBody && enemy.colors) {
                     window.drawNPCBody(currentCtx, enemy.x||0, enemy.y||0, enemy.colors, 0, moving);
@@ -1056,6 +1140,7 @@ function initializeEngine() {
                     // Fallback to basic character drawing if no colors from server
                     drawCharacter(currentCtx,{timer:0,index:0},enemy.x||0,enemy.y||0,48,64,dt,(enemy.vx||0)<0,moving,air,{}); 
                 }
+                currentCtx.restore();
                 
                 currentCtx.fillStyle='#000'; 
                 currentCtx.fillText('L'+(enemy.level||1), enemy.x||0, (enemy.y||0)-8); 
@@ -1088,6 +1173,25 @@ function initializeEngine() {
                 const moving = Math.abs(e.vx)>5; 
                 const air = e.vy<-5 || e.vy>5; 
                 
+                // Initialize damage feedback properties if they don't exist
+                if (typeof e.damageFlashTimer === 'undefined') {
+                    e.damageFlashTimer = 0;
+                }
+                
+                // Update damage flash timer
+                if (e.damageFlashTimer > 0) {
+                    e.damageFlashTimer -= dt;
+                }
+                
+                // Draw enemy with damage flash effect
+                currentCtx.save();
+                if (e.damageFlashTimer > 0) {
+                    // Flash red when taking damage
+                    currentCtx.globalCompositeOperation = 'multiply';
+                    currentCtx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+                    currentCtx.fillRect(e.x, e.y, e.w, e.h);
+                }
+                
                 // Draw enemy as NPC with consistent colors
                 if (window.drawNPCBody && e.colors) {
                     window.drawNPCBody(currentCtx, e.x, e.y, e.colors, e.anim ? e.anim.index : 0, moving);
@@ -1103,7 +1207,8 @@ function initializeEngine() {
                         }
                     } 
                     drawCharacter(currentCtx,e.anim||{timer:0,index:0},e.x,e.y,e.w,e.h,dt,(e.facing||0)<0,moving,air,{swingAngle:eSwing});
-                } 
+                }
+                currentCtx.restore(); 
                 if(e.state==='windup'){ 
                     currentCtx.save(); 
                     currentCtx.globalAlpha=0.35; 
@@ -1128,6 +1233,62 @@ function initializeEngine() {
             } 
         } 
         
+        // Draw projectiles
+        if (window.projectiles && Array.isArray(window.projectiles)) {
+            for (const projectile of window.projectiles) {
+                if (!projectile || projectile.destroyed) continue;
+                
+                currentCtx.save();
+                
+                if (projectile.type === 'arrow') {
+                    // Draw arrow
+                    currentCtx.strokeStyle = '#8B4513'; // Brown shaft
+                    currentCtx.lineWidth = 2;
+                    currentCtx.beginPath();
+                    currentCtx.moveTo(projectile.x, projectile.y);
+                    currentCtx.lineTo(projectile.x - projectile.vx * 0.02, projectile.y - projectile.vy * 0.02);
+                    currentCtx.stroke();
+                    
+                    // Arrow head
+                    currentCtx.fillStyle = '#696969'; // Gray arrowhead
+                    currentCtx.beginPath();
+                    currentCtx.moveTo(projectile.x, projectile.y);
+                    currentCtx.lineTo(projectile.x - 8, projectile.y - 4);
+                    currentCtx.lineTo(projectile.x - 8, projectile.y + 4);
+                    currentCtx.closePath();
+                    currentCtx.fill();
+                } else if (projectile.type === 'fireball') {
+                    // Draw animated fireball
+                    const time = Date.now() * 0.01;
+                    const size = 8 + Math.sin(time * 3) * 2; // Pulsing size
+                    
+                    // Fire effect with multiple layers
+                    currentCtx.fillStyle = '#FF4500'; // Orange-red core
+                    currentCtx.beginPath();
+                    currentCtx.arc(projectile.x, projectile.y, size, 0, Math.PI * 2);
+                    currentCtx.fill();
+                    
+                    currentCtx.fillStyle = '#FF8C00'; // Darker orange outer layer
+                    currentCtx.beginPath();
+                    currentCtx.arc(projectile.x, projectile.y, size + 2, 0, Math.PI * 2);
+                    currentCtx.fill();
+                    
+                    // Fire particles
+                    currentCtx.fillStyle = '#FFFF00'; // Yellow sparks
+                    for (let i = 0; i < 3; i++) {
+                        const angle = time + i * Math.PI * 2 / 3;
+                        const px = projectile.x + Math.cos(angle) * (size + 4);
+                        const py = projectile.y + Math.sin(angle) * (size + 4);
+                        currentCtx.beginPath();
+                        currentCtx.arc(px, py, 2, 0, Math.PI * 2);
+                        currentCtx.fill();
+                    }
+                }
+                
+                currentCtx.restore();
+            }
+        }
+        
         const moving = Math.abs(window.player.vx)>2;
         const air = !window.player.onGround;
         let pSwing=0;
@@ -1140,19 +1301,26 @@ function initializeEngine() {
             }
             if(!window.player._attackApplied && progress>0.4 && progress<0.7){
                 const damage = 8 + (window.equip && window.equip.mainhand? window.equip.mainhand.level*2 : 0) + (window.player.stats && window.player.stats.Strength ? window.player.stats.Strength*1.2 : 0); 
+                let hitEnemy = false;
+                
                 if (typeof window.isConnected === 'function' && window.isConnected() && window.remoteEnemies && window.remoteEnemies instanceof Map){
                     // Hit remote (server) enemies
                     for (const e of window.remoteEnemies.values()){ 
-                        const dx=( (e.x||0)+24 )-(window.player.x+window.player.w/2); 
+                        // Calculate player attack origin based on facing direction
+                        const playerAttackX = window.player.facing > 0 ? 
+                            window.player.x + window.player.w : // Right side when facing right
+                            window.player.x; // Left side when facing left
+                        
+                        const dx=( (e.x||0)+24 )-playerAttackX; 
                         const dy=( (e.y||0)+32 )-(window.player.y+window.player.h/2); 
                         const dist=Math.hypot(dx,dy); 
-                        if(dist < (window.player._reach || 60)){ 
+                        if(dist <= (window.player._reach || 60)){ 
                             if (typeof window.wsSend === 'function') {
                                 window.wsSend({ type:'attackEnemy', id: e.id, damage: Math.round(damage) }); 
                             } else {
                                 console.warn('wsSend function not available yet');
                             }
-                            window.player._attackApplied=true; 
+                            hitEnemy = true;
                             break; 
                         } 
                     } 
@@ -1167,23 +1335,54 @@ function initializeEngine() {
                             continue;
                         }
                         
-                        const dx=(e.x+e.w/2)-(window.player.x+window.player.w/2); 
+                        // Calculate player attack origin based on facing direction
+                        const playerAttackX = window.player.facing > 0 ? 
+                            window.player.x + window.player.w : // Right side when facing right
+                            window.player.x; // Left side when facing left
+                        
+                        const dx=(e.x+e.w/2)-playerAttackX; 
                         const dy=(e.y+e.h/2)-(window.player.y+window.player.h/2); 
                         const dist=Math.hypot(dx,dy); 
-                        if(dist<(window.player._reach || 60)){ 
+                        if(dist<=(window.player._reach || 60)){ 
                             if(typeof e.takeDamage === 'function') {
                                 e.takeDamage(damage); 
                             } else {
                                 console.warn('Enemy missing takeDamage method:', e);
                             }
-                            window.player._attackApplied=true; 
+                            hitEnemy = true;
                         } 
                     } 
                 } 
+                
+                // Mark attack as applied if we hit an enemy
+                if (hitEnemy) {
+                    window.player._attackApplied = true;
+                }
             } 
         } 
         if (window.player) {
+            // Initialize damage feedback properties if they don't exist
+            if (typeof window.player.damageFlashTimer === 'undefined') {
+                window.player.damageFlashTimer = 0;
+            }
+            
+            // Update damage flash timer
+            if (window.player.damageFlashTimer > 0) {
+                window.player.damageFlashTimer -= dt;
+            }
+            
+            // Draw player with damage flash effect
+            currentCtx.save();
+            if (window.player.damageFlashTimer > 0) {
+                // Flash red when taking damage
+                currentCtx.globalCompositeOperation = 'multiply';
+                currentCtx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+                currentCtx.fillRect(window.player.x, window.player.y, window.player.w, window.player.h);
+            }
+            
             drawCharacter(currentCtx,window.player.anim,window.player.x,window.player.y,window.player.w,window.player.h,dt,window.player.facing<0,moving,air,{swingAngle:pSwing}); 
+            currentCtx.restore();
+            
             currentCtx.fillStyle='#000'; 
             currentCtx.fillText(window.player.id, window.player.x, window.player.y-10); 
             currentCtx.fillStyle='#0f0'; 

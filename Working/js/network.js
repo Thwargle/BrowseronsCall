@@ -258,7 +258,8 @@ window.handleServerMessage = function(msg) {
                         equip: msg.equip || null,
                         shirtColor: msg.shirtColor || null,
                         pantColor: msg.pantColor || null,
-                        equipmentColors: msg.equipmentColors || {}
+                        equipmentColors: msg.equipmentColors || {},
+                        reach: msg.reach || 70
                     });
                 } else {
                     const idx = window.gameState.players.findIndex(p => p.id === msg.id);
@@ -338,7 +339,7 @@ window.handleServerMessage = function(msg) {
                     const idx = window.gameState.players.findIndex(p => p.id === msg.id);
                     if (idx !== -1) {
                         const cur = window.gameState.players[idx];
-                        window.gameState.players[idx] = { ...cur, equip: msg.equip };
+                        window.gameState.players[idx] = { ...cur, equip: msg.equip, reach: msg.reach };
                     }
                 }
                 break;
@@ -674,12 +675,21 @@ window.handleServerMessage = function(msg) {
                 if (!window.remoteEnemies) window.remoteEnemies = new Map();
                 if (typeof msg.id !== 'undefined') {
                     const existing = window.remoteEnemies.get(msg.id) || {};
+                    // Store previous health to detect damage
+                    const previousHealth = existing.health || 0;
+                    
                     // Preserve existing colors when updating enemy data
                     const updatedEnemy = { ...existing, ...msg };
                     // Colors should come from server, don't generate client-side
                     if (!updatedEnemy.colors) {
                         console.warn('Enemy updated without colors from server:', msg.id);
                     }
+                    
+                    // Trigger damage flash if health decreased
+                    if (updatedEnemy.health < previousHealth && updatedEnemy.health > 0) {
+                        updatedEnemy.damageFlashTimer = 0.3; // Flash for 0.3 seconds
+                    }
+                    
                     window.remoteEnemies.set(msg.id, updatedEnemy);
                 }
                 break;
@@ -810,6 +820,9 @@ window.handleServerMessage = function(msg) {
                  if (msg && msg.id && window.player && window.player.id === msg.id) {
                      window.player.health = Math.max(0, Math.min(window.player.maxHealth, msg.health));
                      
+                     // Trigger damage flash effect
+                     window.player.damageFlashTimer = 0.3; // Flash for 0.3 seconds
+                     
                      // Reset damage timer to prevent health regeneration when hit
                      window.player._damageTimer = 0;
                      window.player._regenActive = false;
@@ -869,6 +882,11 @@ window.handleServerMessage = function(msg) {
                     
                     console.log('Merged server equipment with local equipment:', window.equip);
                     
+                    // Update reach calculation immediately when equipment changes
+                    if (window.player && typeof window.player.calculateReach === 'function') {
+                        window.player.calculateReach();
+                    }
+                    
                     // Update equipment UI
                     if (window.displayInventoryItems) {
                         window.displayInventoryItems();
@@ -877,8 +895,40 @@ window.handleServerMessage = function(msg) {
                     }
                 }
                 break;
+             case 'projectileCreated':
+                 // Initialize projectiles array if it doesn't exist
+                 if (!window.projectiles) window.projectiles = [];
+                 
+                 // Add new projectile to local state
+                 const newProjectile = { ...msg };
+                 window.projectiles.push(newProjectile);
+                 break;
+                 
+             case 'projectileUpdate':
+                 // Update existing projectile position
+                 if (window.projectiles && Array.isArray(window.projectiles)) {
+                     const projectile = window.projectiles.find(p => p.id === msg.id);
+                     if (projectile) {
+                         projectile.x = msg.x;
+                         projectile.y = msg.y;
+                         projectile.vx = msg.vx;
+                         projectile.vy = msg.vy;
+                     }
+                 }
+                 break;
+                 
+             case 'projectileDestroyed':
+                 // Remove destroyed projectile from local state
+                 if (window.projectiles && Array.isArray(window.projectiles)) {
+                     const index = window.projectiles.findIndex(p => p.id === msg.id);
+                     if (index !== -1) {
+                         window.projectiles.splice(index, 1);
+                     }
+                 }
+                 break;
+                 
              default:
-                 console.log('Unhandled server message:', msg);
+                 console.log('Unhandled server message:', msg.type, msg);
         }
     } catch (e) {
         console.error('Error handling server message:', e);

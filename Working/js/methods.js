@@ -1214,52 +1214,112 @@ window.drawWeapon=function(ctx,x,y,flip,it,angle=0){
     const r = it.rarity || 'Common';
     const m = metal(r);
     
-    if(kind==='Blade'){ 
-        ctx.fillStyle=m.base; ctx.fillRect(0,-2,22,4); 
-        ctx.fillStyle=m.edge; ctx.fillRect(0,-2,22,1); 
-    } else if(kind==='Sword'){ 
-        ctx.fillStyle=m.base; ctx.fillRect(0,-2,16,4); 
-    } else if(kind==='Dagger'){ 
-        ctx.fillStyle=m.base; ctx.fillRect(0,-2,10,4); 
-    } else if(kind==='Axe'){ 
-        ctx.fillStyle=m.base; ctx.fillRect(0,-2,16,4); 
-        ctx.fillRect(12,-8,8,12); 
-    } else if(kind==='Spear'){ 
-        ctx.fillStyle=m.base; ctx.fillRect(0,-2,22,3); 
-        ctx.beginPath(); ctx.moveTo(22,-4); ctx.lineTo(28,0); ctx.lineTo(22,4); ctx.closePath(); ctx.fill(); 
-    } else if(kind==='Mace'){ 
-        ctx.fillStyle=m.base; ctx.fillRect(0,-2,10,4); 
-        ctx.beginPath(); ctx.arc(12,0,6,0,Math.PI*2); ctx.fill(); 
-    } else if(kind==='Saber'){ 
-        ctx.fillStyle=m.base; ctx.fillRect(0,-2,18,3); 
-    } else if(kind==='Hammer'){ 
-        ctx.fillStyle=m.base; ctx.fillRect(0,-2,10,4); 
-        ctx.beginPath(); ctx.arc(12,0,6,0,Math.PI*2); ctx.fill(); 
-    } else if(kind==='Bow'){ 
-        ctx.fillStyle=m.base; ctx.fillRect(0,-2,16,4); 
-        ctx.beginPath(); ctx.arc(16,0,12,0,Math.PI*2); ctx.stroke(); 
-    } else if(kind==='Crossbow'){ 
-        ctx.fillStyle=m.base; ctx.fillRect(0,-2,16,4); 
-        ctx.fillRect(-8,8,32,4); 
-    } else if(kind==='Staff'){ 
-        ctx.fillStyle=m.base; ctx.fillRect(0,-2,22,4); 
-    } else if(kind==='Wand'){ 
-        ctx.fillStyle=m.base; ctx.fillRect(0,-2,8,4); 
-    } else if(kind==='Katana'){ 
-        ctx.fillStyle=m.base; ctx.fillRect(0,-2,18,3); 
-    } else if(kind==='Rapier'){ 
-        ctx.fillStyle=m.base; ctx.fillRect(0,-2,18,3); 
-    } else if(kind==='Warhammer'){ 
-        ctx.fillStyle=m.base; ctx.fillRect(0,-2,10,4); 
-        ctx.beginPath(); ctx.arc(12,0,6,0,Math.PI*2); ctx.fill(); 
-    } else if(kind==='Battleaxe'){ 
-        ctx.fillStyle=m.base; ctx.fillRect(0,-2,16,4); 
-        ctx.fillRect(12,-8,8,12); 
-    } else if(kind==='Halberd'){ 
-        ctx.fillStyle=m.base; ctx.fillRect(0,-2,22,4); 
-        ctx.fillRect(-8,8,32,4); 
-    } else { 
-        ctx.fillStyle=m.base; ctx.fillRect(0,-2,16,4); 
+    // Calculate dynamic weapon length based on current attack reach
+    // The weapon should visually extend exactly to the attack range
+    // Convert reach directly to pixels: reach value = weapon length in pixels
+    let weaponLength = 70; // Default base length (matches base reach)
+    
+    if (window.player && window.player._reach) {
+        // Weapon length directly equals attack reach in pixels
+        weaponLength = Math.round(window.player._reach);
+        
+        // Apply weapon type-specific visual adjustments while maintaining reach-based length
+        if(kind==='Blade'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
+            ctx.fillStyle=m.edge; ctx.fillRect(0,-2,weaponLength,1); 
+        } else if(kind==='Sword'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
+        } else if(kind==='Dagger'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
+        } else if(kind==='Axe'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
+            ctx.fillRect(weaponLength-4,-8,8,12); 
+        } else if(kind==='Spear'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,3); 
+            ctx.beginPath(); ctx.moveTo(weaponLength,-4); ctx.lineTo(weaponLength+6,0); ctx.lineTo(weaponLength,4); ctx.closePath(); ctx.fill(); 
+        } else if(kind==='Mace'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
+            ctx.beginPath(); ctx.arc(weaponLength+2,0,6,0,Math.PI*2); ctx.fill(); 
+        } else if(kind==='Saber'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
+        } else if(kind==='Hammer'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
+            ctx.beginPath(); ctx.arc(weaponLength+2,0,6,0,Math.PI*2); ctx.fill(); 
+        } else if(kind==='Bow'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
+            ctx.beginPath(); ctx.arc(weaponLength,0,12,0,Math.PI*2); ctx.stroke(); 
+        } else if(kind==='Crossbow'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
+            ctx.fillRect(-8,8,weaponLength+16,4); 
+        } else if(kind==='Staff'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
+        } else if(kind==='Wand'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
+        } else if(kind==='Katana'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
+        } else if(kind==='Rapier'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
+        } else if(kind==='Warhammer'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
+            ctx.beginPath(); ctx.arc(weaponLength+2,0,6,0,Math.PI*2); ctx.fill(); 
+        } else if(kind==='Battleaxe'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
+            ctx.fillRect(weaponLength-4,-8,8,12); 
+        } else if(kind==='Halberd'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
+            ctx.fillRect(-8,8,weaponLength+10,4); 
+        } else { 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
+        }
+    } else {
+        // Fallback to original fixed lengths if no reach data available
+        if(kind==='Blade'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,22,4); 
+            ctx.fillStyle=m.edge; ctx.fillRect(0,-2,22,1); 
+        } else if(kind==='Sword'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,16,4); 
+        } else if(kind==='Dagger'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,10,4); 
+        } else if(kind==='Axe'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,16,4); 
+            ctx.fillRect(12,-8,8,12); 
+        } else if(kind==='Spear'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,22,3); 
+            ctx.beginPath(); ctx.moveTo(22,-4); ctx.lineTo(28,0); ctx.lineTo(22,4); ctx.closePath(); ctx.fill(); 
+        } else if(kind==='Mace'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,10,4); 
+            ctx.beginPath(); ctx.arc(12,0,6,0,Math.PI*2); ctx.fill(); 
+        } else if(kind==='Saber'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,18,3); 
+        } else if(kind==='Hammer'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,10,4); 
+            ctx.beginPath(); ctx.arc(12,0,6,0,Math.PI*2); ctx.fill(); 
+        } else if(kind==='Bow'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,16,4); 
+            ctx.beginPath(); ctx.arc(16,0,12,0,Math.PI*2); ctx.stroke(); 
+        } else if(kind==='Crossbow'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,16,4); 
+            ctx.fillRect(-8,8,32,4); 
+        } else if(kind==='Staff'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,22,4); 
+        } else if(kind==='Wand'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,8,4); 
+        } else if(kind==='Katana'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,18,3); 
+        } else if(kind==='Rapier'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,18,3); 
+        } else if(kind==='Warhammer'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,10,4); 
+            ctx.beginPath(); ctx.arc(12,0,6,0,Math.PI*2); ctx.fill(); 
+        } else if(kind==='Battleaxe'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,16,4); 
+            ctx.fillRect(12,-8,8,12); 
+        } else if(kind==='Halberd'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,22,4); 
+            ctx.fillRect(-8,8,32,4); 
+        } else { 
+            ctx.fillStyle=m.base; ctx.fillRect(0,-2,16,4); 
+        }
     } 
     ctx.restore(); 
 }
@@ -1306,6 +1366,13 @@ if (typeof window !== 'undefined') {
           pantColor: window.BASE ? window.BASE.pantColor : null,
           equipmentColors: window.getEquipmentColors ? window.getEquipmentColors() : {}
         });
+        // Send reach update since equipment affects reach
+        if (window.player && window.player._reach) {
+          wsSend({ 
+            type: 'playerUpdate', 
+            reach: window.player._reach 
+          });
+        }
       }
     } catch(_){}
     return res;
@@ -1314,6 +1381,11 @@ if (typeof window !== 'undefined') {
   window.swapUnequip = function(slot){
     const res = origSwapUnequip.apply(this, arguments);
     try { 
+      // Update reach calculation immediately when equipment changes
+      if (window.player && typeof window.player.calculateReach === 'function') {
+        window.player.calculateReach();
+      }
+      
       if (window.isConnected && window.isConnected()) {
         wsSend({ type: 'equipUpdate', equip: window.equip });
         // Also send visual update
@@ -1323,6 +1395,13 @@ if (typeof window !== 'undefined') {
           pantColor: window.BASE ? window.BASE.pantColor : null,
           equipmentColors: window.getEquipmentColors ? window.getEquipmentColors() : {}
         });
+        // Send reach update since equipment affects reach
+        if (window.player && window.player._reach) {
+          wsSend({ 
+            type: 'playerUpdate', 
+            reach: window.player._reach 
+          });
+        }
       }
     } catch(_){}
     return res;
@@ -1331,6 +1410,11 @@ if (typeof window !== 'undefined') {
   window.handleEquipDrop = function(id,slot){
     const res = origHandleEquipDrop.apply(this, arguments);
     try { 
+      // Update reach calculation immediately when equipment changes
+      if (window.player && typeof window.player.calculateReach === 'function') {
+        window.player.calculateReach();
+      }
+      
       if (window.isConnected && window.isConnected()) {
         wsSend({ type: 'equipUpdate', equip: window.equip });
         // Also send visual update
@@ -1340,6 +1424,13 @@ if (typeof window !== 'undefined') {
           pantColor: window.BASE ? window.BASE.pantColor : null,
           equipmentColors: window.getEquipmentColors ? window.getEquipmentColors() : {}
         });
+        // Send reach update since equipment affects reach
+        if (window.player && window.player._reach) {
+          wsSend({ 
+            type: 'playerUpdate', 
+            reach: window.player._reach 
+          });
+        }
       }
     } catch(_){}
     return res;
@@ -1399,12 +1490,20 @@ Player.prototype.applyEquipment=function(){
     this.stats=s; 
     this.maxHealth = Math.max(1, s.Health + s.Endurance*8); 
     if(this.health>this.maxHealth) this.health=this.maxHealth; 
+    
+    // Update weapon info when equipment changes
+    if (typeof window.updateWeaponInfo === 'function') {
+        window.updateWeaponInfo();
+    }
 };
 
 Player.prototype.takeDamage=function(a){ 
     this.health=Math.max(0,this.health-a); 
     this._damageTimer=0; 
     this._regenActive=false; 
+    
+    // Trigger damage flash effect
+    this.damageFlashTimer = 0.3; // Flash for 0.3 seconds
     
     // Check if player should die (health reaches 0)
     if (this.health <= 0) {
@@ -1598,10 +1697,107 @@ Player.prototype.update=function(dt){
     } 
 };
 
+Player.prototype.calculateReach = function() {
+    // Calculate reach based on weapon type and level
+    let baseReach = 23; // Base reach for unarmed (1/3 of 70)
+    
+    if (window.equip && window.equip.mainhand) {
+        const weapon = window.equip.mainhand;
+        const weaponType = window.weaponKindFromName(weapon.name) || weapon.subtype || 'Sword';
+        
+        // Weapon type-specific base reach values (1/3 of original values)
+        switch (weaponType) {
+            case 'Spear':
+            case 'Halberd':
+                baseReach = 40; // Longest reach for polearms (1/3 of 120)
+                break;
+            case 'Staff':
+                baseReach = 37; // Long staff reach (1/3 of 110)
+                break;
+            case 'Sword':
+            case 'Katana':
+            case 'Rapier':
+            case 'Saber':
+            case 'Blade':
+                baseReach = 28; // Standard sword reach (1/3 of 85)
+                break;
+            case 'Axe':
+            case 'Battleaxe':
+            case 'Warhammer':
+            case 'Hammer':
+            case 'Mace':
+                baseReach = 25; // Shorter reach for heavy weapons (1/3 of 75)
+                break;
+            case 'Dagger':
+                baseReach = 18; // Shortest reach for daggers (1/3 of 55)
+                break;
+            case 'Bow':
+            case 'Crossbow':
+            case 'Wand':
+                baseReach = 23; // Ranged weapons use base reach (1/3 of 70)
+                break;
+            default:
+                baseReach = 27; // Default for unknown weapons (1/3 of 80)
+        }
+        
+        // No bonuses - just use base reach for weapon type
+        this._reach = baseReach;
+    } else {
+        // Unarmed - just base reach
+        this._reach = baseReach;
+    }
+};
+
 Player.prototype.performAttack=function(){ 
+    // Check if we have a ranged weapon equipped
+    if (window.equip && window.equip.mainhand) {
+        const weaponKind = window.weaponKindFromName(window.equip.mainhand.name);
+        
+        if (weaponKind === 'Bow' || weaponKind === 'Wand') {
+            // Ranged weapons shoot projectiles instead of melee attacks
+            this.shootProjectile(weaponKind);
+            return;
+        }
+    }
+    
+    // Melee weapons use normal attack
     this.attackAnimTime = 0.25; 
     this._attackApplied=false; 
-    this._reach = 70 + (window.equip.mainhand? window.equip.mainhand.level*6 : 0) + (this.stats.Strength-5)*4; 
+    
+    // Calculate reach based on current equipment
+    this.calculateReach();
+    
+    // Weapon info display removed - no longer showing reach information
+};
+
+Player.prototype.shootProjectile = function(weaponType) {
+    if (!window.isConnected || !window.isConnected() || !window.wsSend) {
+        console.warn('Cannot shoot projectile - not connected to server');
+        return;
+    }
+    
+    // Calculate damage based on weapon level and stats
+    const baseDamage = 8 + (window.equip.mainhand ? window.equip.mainhand.level * 2 : 0);
+    let damage = baseDamage;
+    
+    if (weaponType === 'Bow') {
+        // Bow damage scales with Coordination
+        damage += (window.player.stats.Coordination - 5) * 1.5;
+    } else if (weaponType === 'Wand') {
+        // Wand damage scales with Focus
+        damage += (window.player.stats.Focus - 5) * 2;
+    }
+    
+    // Send projectile creation message to server
+    window.wsSend({
+        type: 'shootProjectile',
+        weaponType: weaponType,
+        direction: window.player.facing > 0 ? 'right' : 'left',
+        damage: Math.round(damage)
+    });
+    
+    // Set a short cooldown for ranged attacks
+    this.attackCooldown = Math.max(0.3, 0.5 - (this.stats.Quickness - 5) * 0.01);
 };
 
 Player.prototype.dropMostValuableItem = function() {
@@ -1732,7 +1928,12 @@ Enemy.prototype.update=function(dt){ if(this.dead) return; const dx=window.playe
   }
   if(this.cool>0) this.cool-=dt;
 };
-Enemy.prototype.takeDamage=function(a){ this.health -= a; if(this.health<=0) this.die(); };
+Enemy.prototype.takeDamage=function(a){ 
+    this.health -= a; 
+    // Trigger damage flash effect
+    this.damageFlashTimer = 0.3; // Flash for 0.3 seconds
+    if(this.health<=0) this.die(); 
+};
 Enemy.prototype.die=function(){ 
   this.dead=true; 
   const dropCount = randInt(1,2); 

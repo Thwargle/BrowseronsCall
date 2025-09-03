@@ -323,13 +323,7 @@ const gameState = {
 console.log('Server starting with vendor colors:', gameState.vendor.colors);
 
 // Debug: Set up a periodic check to see if vendor colors are still present
-setInterval(() => {
-    if (gameState.vendor && gameState.vendor.colors) {
-        console.log('Vendor colors still present:', gameState.vendor.colors);
-    } else {
-        console.warn('Vendor colors missing! Vendor object:', gameState.vendor);
-    }
-}, 10000); // Check every 10 seconds
+// Removed logging to reduce console spam
 
 // Define enemy spawners to the right side of the world
 gameState.spawners = [
@@ -432,7 +426,8 @@ function generateLoot(enemyType, enemyLevel) {
                 dmgMin: dmgMin,
                 dmgMax: dmgMax,
                 value: Math.round(level * 15 * (rarity === 'Legendary' ? 7 : rarity === 'Epic' ? 3 : rarity === 'Rare' ? 2 : rarity === 'Uncommon' ? 1.5 : 1)),
-                icon: null
+                icon: null,
+                subtype: weaponName
             };
         } else {
             const level = Math.floor(Math.random() * (lootTable.armor.level[1] - lootTable.armor.level[0] + 1)) + lootTable.armor.level[0];
@@ -626,7 +621,8 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         inventory: initialInventory,
                         shirtColor: shirtColor,
                         pantColor: pantColor,
-                        equipmentColors: equipmentColors
+                        equipmentColors: equipmentColors,
+                        reach: 70 // Default base reach
                     });
 
                     // Notify all players
@@ -636,7 +632,8 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         id: playerId,
                         shirtColor: shirtColor,
                         pantColor: pantColor,
-                        equipmentColors: equipmentColors
+                        equipmentColors: equipmentColors,
+                        reach: 70 // Default base reach
                     });
 
                     // Always send current world drops to ensure consistency
@@ -770,6 +767,7 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         if (data.shirtColor !== undefined) player.shirtColor = data.shirtColor;
                         if (data.pantColor !== undefined) player.pantColor = data.pantColor;
                         if (data.equipmentColors !== undefined) player.equipmentColors = data.equipmentColors;
+                        if (data.reach !== undefined) player.reach = data.reach;
                         
                         // Broadcast player update to other players
                         broadcastToOthers(playerId, {
@@ -785,7 +783,7 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         const player = gameState.players.get(playerId);
                         player.equip = data.equip;
                         // broadcast to all players so they can render current equipment
-                        broadcastToAll({ type: 'equipUpdate', id: playerId, equip: player.equip });
+                        broadcastToAll({ type: 'equipUpdate', id: playerId, equip: player.equip, reach: player.reach });
                     }
                     break;
 
@@ -1533,6 +1531,62 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                     }
                     break;
 
+                case 'shootProjectile':
+                    if (playerId && gameState.players.has(playerId)) {
+                        const player = gameState.players.get(playerId);
+                        const weaponType = data.weaponType;
+                        const direction = data.direction; // 'left' or 'right'
+                        const playerX = player.x;
+                        const playerY = player.y;
+                        
+                        let projectile = null;
+                        
+                        if (weaponType === 'Bow') {
+                            // Create arrow projectile
+                            projectile = {
+                                id: `arrow-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                                type: 'arrow',
+                                x: playerX + (direction === 'right' ? 32 : -8),
+                                y: playerY + 16,
+                                vx: direction === 'right' ? 300 : -300,
+                                vy: -100, // Initial upward velocity for arc
+                                damage: data.damage || 10,
+                                playerId: playerId,
+                                weaponType: weaponType,
+                                createdAt: Date.now(),
+                                lifeTime: 5000 // 5 seconds max life
+                            };
+                        } else if (weaponType === 'Wand') {
+                            // Create fireball projectile
+                            projectile = {
+                                id: `fireball-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                                type: 'fireball',
+                                x: playerX + (direction === 'right' ? 32 : -8),
+                                y: playerY + 16,
+                                vx: direction === 'right' ? 400 : -400,
+                                vy: 0, // Straight line
+                                damage: data.damage || 15,
+                                playerId: playerId,
+                                weaponType: weaponType,
+                                createdAt: Date.now(),
+                                lifeTime: 4000 // 4 seconds max life
+                            };
+                        }
+                        
+                        if (projectile) {
+                            // Add to game state
+                            if (!gameState.projectiles) gameState.projectiles = [];
+                            gameState.projectiles.push(projectile);
+                            
+                            // Broadcast projectile creation to all players
+                            broadcastToAll({
+                                type: 'projectileCreated',
+                                ...projectile
+                            });
+                        }
+                    }
+                    break;
+
                 default:
                     console.log('Unknown message type:', data.type, 'from', playerName);
             }
@@ -1803,7 +1857,7 @@ setInterval(() => {
             const dx = (nearest.x || 0) - (enemy.x || 0);
             const dy = (nearest.y || 0) - (enemy.y || 0);
             const dist = Math.hypot(dx, dy);
-            if (dist < 80) { // Increased attack range
+            if (dist <= 80) { // Increased attack range - use <= for edge case
                 const dmg = 12 + (enemy.level || 1) * 2;
                 const p = gameState.players.get(nearest.id);
                 if (p) {
@@ -1852,6 +1906,130 @@ setInterval(() => {
                     // Also broadcast playerUpdate for consistency
                     broadcastToAll({ type: 'playerUpdate', id: p.id, x: p.x, y: p.y, health: p.health, maxHealth: p.maxHealth, pyreals: p.pyreals });
                 }
+            }
+        }
+    }
+
+    // Handle projectile physics and collision detection
+    if (gameState.projectiles && gameState.projectiles.length > 0) {
+        const now = Date.now();
+        const projectilesToRemove = [];
+        
+        for (let i = 0; i < gameState.projectiles.length; i++) {
+            const projectile = gameState.projectiles[i];
+            
+            // Check if projectile has expired
+            if (now - projectile.createdAt > projectile.lifeTime) {
+                projectilesToRemove.push(i);
+                continue;
+            }
+            
+            // Apply physics
+            if (projectile.type === 'arrow') {
+                // Arrow has parabolic arc (gravity)
+                projectile.vy += 800 * dt; // gravity
+            }
+            // Fireball goes straight (no gravity)
+            
+            // Update position
+            projectile.x += projectile.vx * dt;
+            projectile.y += projectile.vy * dt;
+            
+            // Check collision with enemies
+            for (const enemy of gameState.enemies) {
+                if (enemy.dead) continue;
+                
+                const dx = projectile.x - enemy.x;
+                const dy = projectile.y - enemy.y;
+                const distance = Math.hypot(dx, dy);
+                
+                if (distance < 32) { // Enemy hit radius
+                    // Deal damage
+                    enemy.health -= projectile.damage;
+                    
+                    if (enemy.health <= 0) {
+                        enemy.dead = true;
+                        // Remove dead enemy from array
+                        const enemyIndex = gameState.enemies.findIndex(e => e.id === enemy.id);
+                        if (enemyIndex !== -1) {
+                            gameState.enemies.splice(enemyIndex, 1);
+                        }
+                        
+                        // Spawn loot when enemy dies
+                        const enemyType = enemy.type || 'basic';
+                        const lootItems = generateLoot(enemyType, enemy.level || 1);
+                        
+                        for (const lootItem of lootItems) {
+                            const dropX = enemy.x + (Math.random() - 0.5) * 100;
+                            const dropY = enemy.y + 10;
+                            const drop = {
+                                id: `enemy-loot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                                x: dropX,
+                                y: dropY,
+                                item: lootItem,
+                                vx: (Math.random() - 0.5) * 140,
+                                vy: -Math.random() * 120 - 260,
+                                pickRadius: 40,
+                                grounded: false,
+                                noPickupUntil: Date.now() + 1000
+                            };
+                            gameState.worldDrops.push(drop);
+                            broadcastToAll({ type: 'dropItem', ...drop });
+                        }
+                        
+                        // Schedule respawn
+                        const spawner = gameState.spawners.find(s => s.id === enemy.spawnerId);
+                        if (spawner) {
+                            spawner.currentEnemyId = null;
+                            spawner.respawnAt = Date.now() + 8000; // 8 seconds respawn
+                        }
+                        
+                        broadcastToAll({ type: 'enemyDeath', id: enemy.id });
+                    } else {
+                        broadcastToAll({ 
+                            type: 'enemyUpdate', 
+                            id: enemy.id, 
+                            health: enemy.health,
+                            colors: enemy.colors
+                        });
+                    }
+                    
+                    // Destroy projectile on hit
+                    projectilesToRemove.push(i);
+                    break;
+                }
+            }
+            
+            // Check collision with environment (ground/platforms)
+            if (projectile.y > GROUND_Y) {
+                projectilesToRemove.push(i);
+            }
+        }
+        
+        // Remove destroyed projectiles (in reverse order to maintain indices)
+        for (let i = projectilesToRemove.length - 1; i >= 0; i--) {
+            const index = projectilesToRemove[i];
+            const destroyedProjectile = gameState.projectiles[index];
+            gameState.projectiles.splice(index, 1);
+            
+            // Broadcast projectile destruction
+            broadcastToAll({
+                type: 'projectileDestroyed',
+                id: destroyedProjectile.id
+            });
+        }
+        
+        // Broadcast projectile updates to all clients
+        if (gameState.projectiles.length > 0) {
+            for (const projectile of gameState.projectiles) {
+                broadcastToAll({
+                    type: 'projectileUpdate',
+                    id: projectile.id,
+                    x: projectile.x,
+                    y: projectile.y,
+                    vx: projectile.vx,
+                    vy: projectile.vy
+                });
             }
         }
     }

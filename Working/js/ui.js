@@ -965,7 +965,9 @@ window.updatePlayerStatsUI=function(force=false){
             div.innerHTML=`<div>${k}</div><div>${Math.round(p.stats[k])}</div>`; 
         } 
         el.appendChild(div); 
-    } 
+    }
+    
+ 
     document.getElementById('goldAmt').innerText = p.pyreals; 
     p._lastHealthShown=Math.round(p.health); 
     p._lastMaxHealthShown=Math.round(p.maxHealth);
@@ -977,7 +979,21 @@ window.updatePlayerStatsUI=function(force=false){
         } catch (error) {
             // Silently handle scrollbar update errors
         }
+    }
+    
+    // Force update weapon info when stats are updated
+    if (typeof window.updateWeaponInfo === 'function') {
+        window.updateWeaponInfo();
     } 
+    
+    // Update weapon info display
+    updateWeaponInfo();
+}
+
+// Update weapon info display (simplified - no reach display)
+window.updateWeaponInfo=function(){
+    // This function is kept for compatibility but no longer displays reach information
+    // The weapon info panel can be hidden or removed from the UI if desired
 }
 
 // Item dropping functions
