@@ -4,100 +4,29 @@ const https = require('https');
 const path = require('path');
 const fs = require('fs');
 
-// Create player data directory if it doesn't exist
-const PLAYER_DATA_DIR = path.join(__dirname, '..', 'player_data');
-if (!fs.existsSync(PLAYER_DATA_DIR)) {
-    fs.mkdirSync(PLAYER_DATA_DIR, { recursive: true });
-    console.log('Created player data directory:', PLAYER_DATA_DIR);
-}
+// Import modular systems
+const { 
+    generateDeathMessage, 
+    savePlayerData, 
+    loadPlayerData, 
+    deletePlayerData, 
+    dropMostValuableItem 
+} = require('./player');
+const { 
+    getRandomEnemyName, 
+    generateNPCColors, 
+    createEnemy 
+} = require('./enemy');
+const { 
+    generateLoot, 
+    createTestSword 
+} = require('./loot');
 
-// Death message generation function
-function generateDeathMessage(playerName, killerName, weaponType) {
-    const messages = [
-        `${playerName} was slain by ${killerName} with a ${weaponType}.`,
-        `${playerName} fell to ${killerName}'s ${weaponType}.`,
-        `${killerName} struck down ${playerName} with a ${weaponType}.`,
-        `${playerName} was defeated by ${killerName} using a ${weaponType}.`,
-        `${killerName} eliminated ${playerName} with a ${weaponType}.`,
-        `${playerName} met their end at the hands of ${killerName} and their ${weaponType}.`,
-        `${killerName} claimed victory over ${playerName} with a ${weaponType}.`,
-        `${playerName} was vanquished by ${killerName}'s ${weaponType}.`,
-        `${killerName} brought down ${playerName} with a ${weaponType}.`,
-        `${playerName} was bested by ${killerName} and their ${weaponType}.`
-    ];
-    
-    return messages[Math.floor(Math.random() * messages.length)];
-}
+// Player data directory is now managed in player.js
 
-// Persistent storage functions for player data
-function savePlayerData(playerName, playerData) {
-    try {
-        const fileName = `${playerName.replace(/[^a-zA-Z0-9]/g, '_')}.json`;
-        const filePath = path.join(PLAYER_DATA_DIR, fileName);
-        
-        const dataToSave = {
-            id: playerData.id,
-            name: playerData.name,
-            x: playerData.x,
-            y: playerData.y,
-            health: playerData.health,
-            maxHealth: playerData.maxHealth,
-            pyreals: playerData.pyreals,
-            equip: playerData.equip,
-            inventory: playerData.inventory,
-            shirtColor: playerData.shirtColor,
-            pantColor: playerData.pantColor,
-            equipmentColors: playerData.equipmentColors,
-            lastSaved: Date.now()
-        };
-        
-        fs.writeFileSync(filePath, JSON.stringify(dataToSave, null, 2));
-        console.log(`Saved player data for ${playerName} to ${fileName}`);
-        console.log(`Equipment data saved:`, JSON.stringify(dataToSave.equip, null, 2));
-        console.log(`Inventory data saved:`, JSON.stringify(dataToSave.inventory, null, 2));
-        return true;
-    } catch (error) {
-        console.error(`Error saving player data for ${playerName}:`, error);
-        return false;
-    }
-}
+// Death message generation is now handled in player.js
 
-function loadPlayerData(playerName) {
-    try {
-        const fileName = `${playerName.replace(/[^a-zA-Z0-9]/g, '_')}.json`;
-        const filePath = path.join(PLAYER_DATA_DIR, fileName);
-        
-        if (!fs.existsSync(filePath)) {
-            console.log(`No saved data found for ${playerName}`);
-            return null;
-        }
-        
-        const data = fs.readFileSync(filePath, 'utf8');
-        const playerData = JSON.parse(data);
-        console.log(`Loaded player data for ${playerName} from ${fileName}`);
-        return playerData;
-    } catch (error) {
-        console.error(`Error loading player data for ${playerName}:`, error);
-        return null;
-    }
-}
-
-function deletePlayerData(playerName) {
-    try {
-        const fileName = `${playerName.replace(/[^a-zA-Z0-9]/g, '_')}.json`;
-        const filePath = path.join(PLAYER_DATA_DIR, fileName);
-        
-        if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-            console.log(`Deleted player data for ${playerName}`);
-            return true;
-        }
-        return false;
-    } catch (error) {
-        console.error(`Error deleting player data for ${playerName}:`, error);
-        return false;
-    }
-}
+// Player data functions are now handled in player.js
 
 // Create HTTP server
 const httpServer = http.createServer((req, res) => {
@@ -220,195 +149,13 @@ if (httpsWss) {
 const WORLD_W = 3600;
 const GROUND_Y = 550;
 
-// Loot tables for different enemy types
-const LOOT_TABLES = {
-    basic: {
-        currency: { chance: 0.4, amount: [5, 15] },
-        weapon: { chance: 0.35, level: [1, 3] },
-        armor: { chance: 0.25, level: [1, 2] }
-    },
-    elite: {
-        currency: { chance: 0.3, amount: [15, 30] },
-        weapon: { chance: 0.4, level: [2, 5] },
-        armor: { chance: 0.3, level: [2, 4] }
-    },
-    boss: {
-        currency: { chance: 0.2, amount: [30, 60] },
-        weapon: { chance: 0.5, level: [4, 8] },
-        armor: { chance: 0.3, level: [4, 6] }
-    },
-    spellcaster: {
-        currency: { chance: 0.3, amount: [20, 40] },
-        weapon: { chance: 0.4, level: [3, 6] },
-        armor: { chance: 0.3, level: [3, 5] }
-    }
-};
+// Loot tables are now managed in loot.js
 
-// Human first names for enemies
-const ENEMY_NAMES = [
-    'Aiden', 'Aria', 'Blake', 'Caleb', 'Chloe', 'Dylan', 'Emma', 'Ethan', 'Faith', 'Gavin',
-    'Grace', 'Hunter', 'Isabella', 'Jackson', 'Jade', 'Kai', 'Lily', 'Logan', 'Maya', 'Mason',
-    'Nora', 'Oliver', 'Olivia', 'Parker', 'Quinn', 'Riley', 'Sage', 'Scarlett', 'Theo', 'Violet',
-    'Wyatt', 'Zoe', 'Asher', 'Aurora', 'Bennett', 'Brooklyn', 'Carter', 'Charlotte', 'Declan', 'Eva',
-    'Felix', 'Hazel', 'Isaac', 'Ivy', 'Jasper', 'Luna', 'Max', 'Nova', 'Owen', 'Penelope'
-];
+// Enemy names and rarity functions are now managed in enemy.js
 
-// Rarity-based stat bonus ranges
-const RARITY_BONUSES = {
-    Common: { min: 1, max: 2 },
-    Uncommon: { min: 2, max: 4 },
-    Rare: { min: 4, max: 6 },
-    Epic: { min: 6, max: 8 },
-    Legendary: { min: 8, max: 10 }
-};
+// Item naming system is now managed in loot.js
 
-// Function to get random enemy name
-function getRandomEnemyName() {
-    return ENEMY_NAMES[Math.floor(Math.random() * ENEMY_NAMES.length)];
-}
-
-// Function to determine rarity based on enemy level and type
-function determineRarity(enemyLevel, enemyType) {
-    const roll = Math.random();
-    
-    // Level 1 enemies can only drop Common and Uncommon
-    if (enemyLevel === 1) {
-        if (roll > 0.8) return 'Uncommon';
-        return 'Common';
-    }
-    
-    // Level 2 enemies can drop Common to Rare
-    if (enemyLevel === 2) {
-        if (roll > 0.9) return 'Rare';
-        else if (roll > 0.6) return 'Uncommon';
-        return 'Common';
-    }
-    
-    // Level 3+ enemies can drop all rarities
-    if (roll > 0.95) return 'Legendary';
-    else if (roll > 0.85) return 'Epic';
-    else if (roll > 0.7) return 'Rare';
-    else if (roll > 0.4) return 'Uncommon';
-    return 'Common';
-}
-
-// Item naming system
-const ITEM_NAMES = {
-            weapon: {
-            prefixes: {
-                Common: ['Rusty', 'Worn', 'Simple', 'Basic', 'Plain', 'Crude', 'Cheap'],
-                Uncommon: ['Sturdy', 'Reliable', 'Well-made', 'Solid', 'Durable', 'Quality', 'Trusted'],
-                Epic: ['Masterwork', 'Exquisite', 'Superior', 'Exceptional', 'Refined', 'Pristine', 'Perfect'],
-                Legendary: ['Ancient', 'Mythical', 'Divine', 'Eternal', 'Transcendent', 'Immortal', 'Sacred']
-            },
-            suffixes: {
-                Common: ['of the Commoner', 'of the Peasant', 'of the Novice', 'of the Beginner'],
-                Uncommon: ['of the Warrior', 'of the Fighter', 'of the Soldier', 'of the Veteran'],
-                Epic: ['of the Champion', 'of the Hero', 'of the Master', 'of the Elite'],
-                Legendary: ['of the Legend', 'of the Myth', 'of the Gods', 'of the Ancients']
-            }
-        },
-            armor: {
-            prefixes: {
-                Common: ['Simple', 'Basic', 'Plain', 'Rough', 'Crude', 'Cheap', 'Worn'],
-                Uncommon: ['Sturdy', 'Reinforced', 'Solid', 'Durable', 'Reliable', 'Quality', 'Trusted'],
-                Epic: ['Masterwork', 'Exquisite', 'Superior', 'Exceptional', 'Refined', 'Pristine', 'Perfect'],
-                Legendary: ['Ancient', 'Mythical', 'Divine', 'Eternal', 'Transcendent', 'Immortal', 'Sacred']
-            },
-            suffixes: {
-                Common: ['of the Commoner', 'of the Peasant', 'of the Novice', 'of the Beginner'],
-                Uncommon: ['of the Warrior', 'of the Fighter', 'of the Soldier', 'of the Veteran'],
-                Epic: ['of the Champion', 'of the Hero', 'of the Master', 'of the Elite'],
-                Legendary: ['of the Legend', 'of the Myth', 'of the Gods', 'of the Ancients']
-            }
-        }
-};
-
-// Function to generate item name based on rarity and type
-function generateItemName(itemType, rarity, baseName, slot = null) {
-    const prefixes = ITEM_NAMES[itemType]?.prefixes[rarity] || [];
-    const suffixes = ITEM_NAMES[itemType]?.suffixes[rarity] || [];
-    
-    const prefix = prefixes.length > 0 ? prefixes[Math.floor(Math.random() * prefixes.length)] : '';
-    const suffix = suffixes.length > 0 ? suffixes[Math.floor(Math.random() * suffixes.length)] : '';
-    
-    let name = baseName;
-    if (slot && itemType === 'armor') {
-        // For armor, just use the slot name (e.g., "Head", "Chest", "Legs")
-        const slotNames = {
-            'head': 'Head',
-            'chest': 'Chest', 
-            'legs': 'Legs',
-            'feet': 'Feet',
-            'hands': 'Hands',
-            'wrists': 'Wrists',
-            'waist': 'Waist',
-            'neck': 'Neck',
-            'shoulders': 'Shoulders'
-        };
-        name = slotNames[slot] || slot.charAt(0).toUpperCase() + slot.slice(1);
-    }
-    
-    if (prefix && suffix) {
-        return `${prefix} ${name} ${suffix}`;
-    } else if (prefix) {
-        return `${prefix} ${name}`;
-    } else if (suffix) {
-        return `${name} ${suffix}`;
-    }
-    
-    return name;
-}
-
-// Function to generate consistent colors for NPCs (vendors and enemies)
-function generateNPCColors() {
-    // Expanded shirt colors - more variety including warm, cool, and neutral tones
-    const shirtColors = [
-        '#3f506a', '#4a5568', '#2d3748', '#1a202c', '#2d3748', '#4a5568', // Original blues
-        '#8b4513', '#a0522d', '#cd853f', '#daa520', '#b8860b', // Browns and golds
-        '#556b2f', '#6b8e23', '#9acd32', '#32cd32', '#228b22', // Greens
-        '#8b0000', '#dc143c', '#b22222', '#ff6347', '#ff4500', // Reds and oranges
-        '#4b0082', '#8a2be2', '#9370db', '#ba55d3', '#9932cc', // Purples
-        '#2f4f4f', '#696969', '#808080', '#a9a9a9', '#c0c0c0', // Grays
-        '#f5deb3', '#deb887', '#f4a460', '#daa520', '#bdb76b'  // Tans and beiges
-    ];
-    
-    // Expanded pant colors - more variety including dark and light tones
-    const pantColors = [
-        '#2b2b35', '#2d3748', '#1a202c', '#2d3748', '#2b2b35', '#1a202c', // Original darks
-        '#191970', '#000080', '#00008b', '#0000cd', '#0000ff', // Blues
-        '#800000', '#8b0000', '#a0522d', '#8b4513', '#654321', // Browns
-        '#228b22', '#006400', '#008000', '#32cd32', '#228b22', // Greens
-        '#4b0082', '#483d8b', '#6a5acd', '#7b68ee', '#9370db', // Purples
-        '#2f4f4f', '#696969', '#808080', '#a9a9a9', '#c0c0c0', // Grays
-        '#8b7355', '#a0522d', '#cd853f', '#deb887', '#f5deb3'  // Tans
-    ];
-    
-    // New belt colors for variety
-    const beltColors = [
-        '#8b4513', '#a0522d', '#cd853f', '#daa520', '#b8860b', // Browns and golds
-        '#2f4f4f', '#696969', '#808080', '#a9a9a9', '#c0c0c0', // Grays
-        '#4b0082', '#8a2be2', '#9370db', '#ba55d3', '#9932cc', // Purples
-        '#8b0000', '#dc143c', '#b22222', '#ff6347', '#ff4500', // Reds and oranges
-        '#556b2f', '#6b8e23', '#9acd32', '#32cd32', '#228b22'  // Greens
-    ];
-    
-    // New accessory colors (for necklaces, etc.)
-    const accessoryColors = [
-        '#ffd700', '#ffed4e', '#ffb347', '#ff8c00', '#ff6347', // Golds and oranges
-        '#c0c0c0', '#e5e4e2', '#f5f5f5', '#d3d3d3', '#a9a9a9', // Silvers and whites
-        '#ff69b4', '#ff1493', '#db7093', '#ffb6c1', '#ffc0cb', // Pinks
-        '#00ced1', '#40e0d0', '#48d1cc', '#7fffd4', '#66cdaa', // Cyans
-        '#dda0dd', '#ee82ee', '#d8bfd8', '#e6e6fa', '#f0f8ff'  // Lavenders
-    ];
-    
-    return {
-        shirt: shirtColors[Math.floor(Math.random() * shirtColors.length)],
-        pants: pantColors[Math.floor(Math.random() * pantColors.length)],
-        belt: beltColors[Math.floor(Math.random() * beltColors.length)],
-        accessory: accessoryColors[Math.floor(Math.random() * accessoryColors.length)]
-    };
-}
+// NPC color generation is now managed in enemy.js
 
 const gameState = {
     players: new Map(),
@@ -433,194 +180,7 @@ gameState.spawners = [
     { id: 'sp_5', x: 2800, y: GROUND_Y - 64, currentEnemyId: null, respawnAt: Date.now() + 10000, visibilityRange: 500, type: 'spellcaster' }
 ];
 
-// Function to generate loot based on enemy type and level
-function generateLoot(enemyType, enemyLevel) {
-    const lootTable = LOOT_TABLES[enemyType] || LOOT_TABLES.basic;
-    const dropCount = Math.floor(Math.random() * 2) + 1;
-    const drops = [];
-    
-    for (let i = 0; i < dropCount; i++) {
-        const roll = Math.random();
-        let dropType = 'currency';
-        
-        // Determine drop type based on chances
-        if (roll < lootTable.currency.chance) {
-            dropType = 'currency';
-        } else if (roll < lootTable.currency.chance + lootTable.weapon.chance) {
-            dropType = 'weapon';
-        } else {
-            dropType = 'armor';
-        }
-        
-        // Create the item based on type
-        let dropItem;
-        if (dropType === 'currency') {
-            const amount = Math.floor(Math.random() * (lootTable.currency.amount[1] - lootTable.currency.amount[0] + 1)) + lootTable.currency.amount[0];
-            dropItem = {
-                id: `currency-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                name: 'Pyreals',
-                type: 'currency',
-                amount: amount * enemyLevel,
-                value: amount * enemyLevel,
-                icon: null,
-                short: 'Currency used for trading',
-                rarity: 'Common'
-            };
-        } else if (dropType === 'weapon') {
-            const level = Math.floor(Math.random() * (lootTable.weapon.level[1] - lootTable.weapon.level[0] + 1)) + lootTable.weapon.level[0];
-            const weaponNames = ['Sword', 'Axe', 'Mace', 'Dagger', 'Spear', 'Hammer', 'Bow', 'Crossbow', 'Staff', 'Wand', 'Katana', 'Rapier', 'Warhammer', 'Battleaxe', 'Halberd'];
-            const weaponName = weaponNames[Math.floor(Math.random() * weaponNames.length)];
-            
-            // Use new rarity determination system
-            const rarity = determineRarity(level, enemyType);
-            const rarityBonus = RARITY_BONUSES[rarity];
-            
-            const fullName = generateItemName('weapon', rarity, weaponName);
-            
-            // Calculate base stats with rarity bonuses
-            const baseStatValue = Math.round(level * 1.5);
-            const bonusStatValue = Math.floor(Math.random() * (rarityBonus.max - rarityBonus.min + 1)) + rarityBonus.min;
-            
-            // Determine weapon type and primary stats
-            let primaryStats = {};
-            let secondaryStats = {};
-            
-            if (['Sword', 'Axe', 'Mace', 'Hammer', 'Warhammer', 'Battleaxe', 'Halberd'].includes(weaponName)) {
-                // Heavy weapons - focus on Strength
-                primaryStats = { Strength: baseStatValue + bonusStatValue };
-                secondaryStats = { Endurance: Math.round(baseStatValue * 0.8) };
-            } else if (['Dagger', 'Rapier', 'Katana'].includes(weaponName)) {
-                // Light weapons - focus on Quickness
-                primaryStats = { Quickness: baseStatValue + bonusStatValue };
-                secondaryStats = { Coordination: Math.round(baseStatValue * 0.8) };
-            } else if (['Bow', 'Crossbow'].includes(weaponName)) {
-                // Ranged weapons - focus on Coordination
-                primaryStats = { Coordination: baseStatValue + bonusStatValue };
-                secondaryStats = { Quickness: Math.round(baseStatValue * 0.8) };
-            } else if (['Staff', 'Wand'].includes(weaponName)) {
-                // Magic weapons - focus on Focus
-                primaryStats = { Focus: baseStatValue + bonusStatValue };
-                secondaryStats = { Mana: Math.round(baseStatValue * 0.8) };
-            } else {
-                // Balanced weapons (Spear) - balanced stats
-                primaryStats = { 
-                    Strength: Math.round(baseStatValue * 0.8) + Math.floor(bonusStatValue / 2), 
-                    Quickness: Math.round(baseStatValue * 0.8) + Math.floor(bonusStatValue / 2)
-                };
-            }
-            
-            // Calculate damage based on rarity and level
-            const baseDamage = level * 3;
-            const rarityDamageMultiplier = rarity === 'Legendary' ? 2.5 : rarity === 'Epic' ? 1.8 : rarity === 'Rare' ? 1.5 : rarity === 'Uncommon' ? 1.2 : 1;
-            const dmgMin = Math.round(baseDamage * rarityDamageMultiplier);
-            const dmgMax = Math.round(baseDamage * rarityDamageMultiplier * 1.5);
-            
-            dropItem = {
-                id: `weapon-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                name: fullName,
-                type: 'weapon',
-                level: level,
-                rarity: rarity,
-                short: `${rarity} ${weaponName.toLowerCase()} with enhanced properties`,
-                stats: { ...primaryStats, ...secondaryStats },
-                dmgMin: dmgMin,
-                dmgMax: dmgMax,
-                value: Math.round(level * 15 * (rarity === 'Legendary' ? 7 : rarity === 'Epic' ? 3 : rarity === 'Rare' ? 2 : rarity === 'Uncommon' ? 1.5 : 1)),
-                icon: null,
-                subtype: weaponName
-            };
-        } else {
-            const level = Math.floor(Math.random() * (lootTable.armor.level[1] - lootTable.armor.level[0] + 1)) + lootTable.armor.level[0];
-            const slots = ['head', 'chest', 'legs', 'feet', 'hands', 'wrists', 'waist', 'neck', 'shoulders'];
-            const slot = slots[Math.floor(Math.random() * slots.length)];
-            const armorNames = ['Leather', 'Chain', 'Plate', 'Cloth', 'Silk', 'Steel', 'Mithril', 'Adamantine', 'Dragonhide', 'Shadowweave', 'Celestial', 'Void-touched'];
-            const armorName = armorNames[Math.floor(Math.random() * armorNames.length)];
-            
-            // Use new rarity determination system
-            const rarity = determineRarity(level, enemyType);
-            const rarityBonus = RARITY_BONUSES[rarity];
-            
-            const fullName = generateItemName('armor', rarity, armorName, slot);
-            
-            // Calculate base stats with rarity bonuses
-            const baseStatValue = Math.round(level * 1.2);
-            const bonusStatValue = Math.floor(Math.random() * (rarityBonus.max - rarityBonus.min + 1)) + rarityBonus.min;
-            
-            // Determine armor type and primary stats
-            let primaryStats = {};
-            let secondaryStats = {};
-            
-            if (['Leather', 'Cloth', 'Silk'].includes(armorName)) {
-                // Light armor - focus on Quickness and Coordination
-                primaryStats = { 
-                    Endurance: baseStatValue + bonusStatValue,
-                    Quickness: Math.round(baseStatValue * 0.8) + Math.floor(bonusStatValue / 2)
-                };
-                secondaryStats = { Coordination: Math.round(baseStatValue * 0.6) };
-            } else if (['Chain', 'Steel'].includes(armorName)) {
-                // Medium armor - balanced stats
-                primaryStats = { 
-                    Endurance: baseStatValue + bonusStatValue,
-                    Coordination: Math.round(baseStatValue * 0.8)
-                };
-            } else if (['Plate', 'Mithril', 'Adamantine'].includes(armorName)) {
-                // Heavy armor - focus on Endurance and Health
-                primaryStats = { 
-                    Endurance: baseStatValue + bonusStatValue,
-                    Health: Math.round(baseStatValue * 1.2)
-                };
-                secondaryStats = { Coordination: Math.round(baseStatValue * 0.6) };
-            } else if (['Dragonhide', 'Shadowweave', 'Celestial', 'Void-touched'].includes(armorName)) {
-                // Special armor - focus on Focus and Mana
-                primaryStats = { 
-                    Focus: baseStatValue + bonusStatValue,
-                    Mana: Math.round(baseStatValue * 1.2)
-                };
-                secondaryStats = { Endurance: Math.round(baseStatValue * 0.8) };
-            }
-            
-            dropItem = {
-                id: `armor-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                name: fullName,
-                type: 'armor',
-                level: level,
-                rarity: rarity,
-                short: `${rarity} ${slot} armor piece with enhanced protection`,
-                slot: slot,
-                stats: { ...primaryStats, ...secondaryStats },
-                value: Math.round(level * 12 * (rarity === 'Legendary' ? 7 : rarity === 'Epic' ? 3 : rarity === 'Rare' ? 2 : rarity === 'Uncommon' ? 1.5 : 1)),
-                icon: null
-            };
-        }
-        
-        drops.push(dropItem);
-    }
-    
-    return drops;
-}
-
-// Function to create a test sword for new players
-function createTestSword() {
-    const rarity = 'Common';
-    const rarityBonus = RARITY_BONUSES[rarity];
-    const baseStatValue = 3;
-    const bonusStatValue = Math.floor(Math.random() * (rarityBonus.max - rarityBonus.min + 1)) + rarityBonus.min;
-    
-    return {
-        id: 'test-sword-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9),
-        name: 'Simple Sword of the Novice',
-        type: 'weapon',
-        level: 1,
-        rarity: rarity,
-        short: 'A basic training sword',
-        value: 10,
-        stats: { Strength: baseStatValue + bonusStatValue, Quickness: Math.round(baseStatValue * 0.8) },
-        dmgMin: 5,
-        dmgMax: 8,
-        subtype: 'Sword',
-        icon: null
-    };
-}
+// Loot generation functions are now managed in loot.js
 
 // Handle WebSocket connections
 function handleWebSocketConnection(ws, req, isSecure = false) {
@@ -1708,10 +1268,9 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                             gameState.projectiles.push(projectile);
                             
                             // Broadcast projectile creation to all players
-                            const { type: projectileType, ...projectileData } = projectile;
                             broadcastToAll({
                                 type: 'projectileCreated',
-                                ...projectileData
+                                ...projectile
                             });
                         }
                     }
@@ -2015,10 +1574,9 @@ const gameLoopInterval = setInterval(() => {
                         gameState.projectiles.push(projectile);
                         
                         // Broadcast projectile creation to all players
-                        const { type: projectileType, ...projectileData } = projectile;
                         broadcastToAll({
                             type: 'projectileCreated',
-                            ...projectileData
+                            ...projectile
                         });
                         
                         enemy.attackCooldown = 2.0; // Longer cooldown for spells
@@ -2290,55 +1848,42 @@ const gameLoopInterval = setInterval(() => {
     }
 }, 16.67); // End of main game loop - 60 ticks per second
 
-// Helper functions
-function dropMostValuableItem(player) {
-    let mostValuableItem = null;
-    let highestValue = 0;
-    let itemSource = null; // 'inventory' or 'equipment'
-    let itemIndex = -1;
-    let itemSlot = null;
+// Helper functions are now managed in their respective modules
+
+// Function to handle enemy death and loot generation
+function handleEnemyDeath(enemy, gameState, broadcastToAll) {
+    // Generate loot for the enemy
+    const loot = generateLoot(enemy.type, enemy.level);
     
-    // Check inventory for most valuable item
-    if (player.inventory && Array.isArray(player.inventory)) {
-        for (let i = 0; i < player.inventory.length; i++) {
-            const item = player.inventory[i];
-            if (item && item.value && item.value > highestValue) {
-                highestValue = item.value;
-                mostValuableItem = item;
-                itemSource = 'inventory';
-                itemIndex = i;
-                itemSlot = null;
-            }
-        }
-    }
-    
-    // Check equipment for most valuable item
-    if (player.equip && typeof player.equip === 'object') {
-        for (const slot in player.equip) {
-            const item = player.equip[slot];
-            if (item && item.value && item.value > highestValue) {
-                highestValue = item.value;
-                mostValuableItem = item;
-                itemSource = 'equipment';
-                itemIndex = -1;
-                itemSlot = slot;
-            }
-        }
-    }
-    
-    // If we found a valuable item, remove it from the player
-    if (mostValuableItem && highestValue > 0) {
-        if (itemSource === 'inventory') {
-            player.inventory[itemIndex] = null;
-        } else if (itemSource === 'equipment') {
-            player.equip[itemSlot] = null;
-        }
+    // Create world drops for each loot item
+    loot.forEach(item => {
+        const drop = {
+            id: `enemy-drop-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            x: enemy.x + 16, // Center of enemy
+            y: enemy.y + 24,
+            item: item,
+            vx: (Math.random() - 0.5) * 100,
+            vy: -Math.random() * 100 - 200,
+            pickRadius: 40,
+            grounded: false,
+            noPickupUntil: Date.now() + 2000 // 2 seconds delay
+        };
         
-        console.log(`Removed ${mostValuableItem.name} (value: ${highestValue}) from player ${player.name} due to death`);
-        return mostValuableItem;
-    }
+        gameState.worldDrops.push(drop);
+        
+        // Broadcast item drop to all players
+        broadcastToAll({
+            type: 'dropItem',
+            ...drop
+        });
+    });
     
-    return null;
+    console.log(`Enemy ${enemy.name} (L${enemy.level}) died and dropped ${loot.length} items`);
+    
+    // Mark enemy for respawn
+    enemy.respawnAt = Date.now() + 10000; // 10 seconds
+    enemy.health = 0;
+    enemy.dead = true;
 }
 
 function broadcastToAll(message) {

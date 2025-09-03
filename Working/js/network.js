@@ -895,12 +895,21 @@ window.handleServerMessage = function(msg) {
                  // Initialize projectiles array if it doesn't exist
                  if (!window.projectiles) window.projectiles = [];
                  
-                 // Add new projectile to local state (exclude the message type)
+                 // Add new projectile to local state (exclude the message type, keep projectile type)
                  const { type: messageType, ...projectileData } = msg;
                  const newProjectile = { ...projectileData };
                  window.projectiles.push(newProjectile);
                  
                  console.log('Added projectile to local array:', newProjectile.type, 'Total projectiles:', window.projectiles.length);
+                 break;
+                 
+             case 'arrow':
+                 // Fallback handler for direct arrow messages (shouldn't happen with fixed server)
+                 console.log('Received direct arrow message (fallback handler)');
+                 if (!window.projectiles) window.projectiles = [];
+                 const arrowProjectile = { ...msg };
+                 window.projectiles.push(arrowProjectile);
+                 console.log('Added arrow projectile via fallback:', arrowProjectile.type, 'Total projectiles:', window.projectiles.length);
                  break;
                  
              case 'fireball':
