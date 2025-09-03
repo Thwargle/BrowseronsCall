@@ -4,6 +4,101 @@ const https = require('https');
 const path = require('path');
 const fs = require('fs');
 
+// Create player data directory if it doesn't exist
+const PLAYER_DATA_DIR = path.join(__dirname, '..', 'player_data');
+if (!fs.existsSync(PLAYER_DATA_DIR)) {
+    fs.mkdirSync(PLAYER_DATA_DIR, { recursive: true });
+    console.log('Created player data directory:', PLAYER_DATA_DIR);
+}
+
+// Death message generation function
+function generateDeathMessage(playerName, killerName, weaponType) {
+    const messages = [
+        `${playerName} was slain by ${killerName} with a ${weaponType}.`,
+        `${playerName} fell to ${killerName}'s ${weaponType}.`,
+        `${killerName} struck down ${playerName} with a ${weaponType}.`,
+        `${playerName} was defeated by ${killerName} using a ${weaponType}.`,
+        `${killerName} eliminated ${playerName} with a ${weaponType}.`,
+        `${playerName} met their end at the hands of ${killerName} and their ${weaponType}.`,
+        `${killerName} claimed victory over ${playerName} with a ${weaponType}.`,
+        `${playerName} was vanquished by ${killerName}'s ${weaponType}.`,
+        `${killerName} brought down ${playerName} with a ${weaponType}.`,
+        `${playerName} was bested by ${killerName} and their ${weaponType}.`
+    ];
+    
+    return messages[Math.floor(Math.random() * messages.length)];
+}
+
+// Persistent storage functions for player data
+function savePlayerData(playerName, playerData) {
+    try {
+        const fileName = `${playerName.replace(/[^a-zA-Z0-9]/g, '_')}.json`;
+        const filePath = path.join(PLAYER_DATA_DIR, fileName);
+        
+        const dataToSave = {
+            id: playerData.id,
+            name: playerData.name,
+            x: playerData.x,
+            y: playerData.y,
+            health: playerData.health,
+            maxHealth: playerData.maxHealth,
+            pyreals: playerData.pyreals,
+            equip: playerData.equip,
+            inventory: playerData.inventory,
+            shirtColor: playerData.shirtColor,
+            pantColor: playerData.pantColor,
+            equipmentColors: playerData.equipmentColors,
+            lastSaved: Date.now()
+        };
+        
+        fs.writeFileSync(filePath, JSON.stringify(dataToSave, null, 2));
+        console.log(`Saved player data for ${playerName} to ${fileName}`);
+        console.log(`Equipment data saved:`, JSON.stringify(dataToSave.equip, null, 2));
+        console.log(`Inventory data saved:`, JSON.stringify(dataToSave.inventory, null, 2));
+        return true;
+    } catch (error) {
+        console.error(`Error saving player data for ${playerName}:`, error);
+        return false;
+    }
+}
+
+function loadPlayerData(playerName) {
+    try {
+        const fileName = `${playerName.replace(/[^a-zA-Z0-9]/g, '_')}.json`;
+        const filePath = path.join(PLAYER_DATA_DIR, fileName);
+        
+        if (!fs.existsSync(filePath)) {
+            console.log(`No saved data found for ${playerName}`);
+            return null;
+        }
+        
+        const data = fs.readFileSync(filePath, 'utf8');
+        const playerData = JSON.parse(data);
+        console.log(`Loaded player data for ${playerName} from ${fileName}`);
+        return playerData;
+    } catch (error) {
+        console.error(`Error loading player data for ${playerName}:`, error);
+        return null;
+    }
+}
+
+function deletePlayerData(playerName) {
+    try {
+        const fileName = `${playerName.replace(/[^a-zA-Z0-9]/g, '_')}.json`;
+        const filePath = path.join(PLAYER_DATA_DIR, fileName);
+        
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+            console.log(`Deleted player data for ${playerName}`);
+            return true;
+        }
+        return false;
+    } catch (error) {
+        console.error(`Error deleting player data for ${playerName}:`, error);
+        return false;
+    }
+}
+
 // Create HTTP server
 const httpServer = http.createServer((req, res) => {
     // Serve static files
@@ -317,7 +412,6 @@ function generateNPCColors() {
 
 const gameState = {
     players: new Map(),
-    disconnectedPlayers: new Map(),
     enemies: [],
     worldDrops: [],
     nextEnemyId: 1,
@@ -565,9 +659,10 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                             return;
                         }
                         
-                        // Check if we have stored data for this player from a previous disconnection
-                        if (gameState.disconnectedPlayers.has(playerName)) {
-                            console.log(`${playerName} reconnecting (was disconnected)`);
+                        // Check if we have stored data for this player from a previous session
+                        const hasStoredData = loadPlayerData(playerName) !== null;
+                        if (hasStoredData) {
+                            console.log(`${playerName} reconnecting (has stored data)`);
                         }
                         
                         playerId = playerName;
@@ -588,22 +683,19 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                     }
                     
                     // Check if we have stored data for this player (reconnection)
-                    let storedPlayerData = null;
-                    if (gameState.disconnectedPlayers.has(playerName)) {
-                        storedPlayerData = gameState.disconnectedPlayers.get(playerName);
-                        console.log(`${playerName} restoring data from previous session`);
-                        // Remove from disconnected players since they're now connected
-                        gameState.disconnectedPlayers.delete(playerName);
+                    let storedPlayerData = loadPlayerData(playerName);
+                    if (storedPlayerData) {
+                        console.log(`${playerName} restoring data from persistent storage`);
                     }
                     
                     // Add player to game state (restore data if available, otherwise use defaults)
                     let initialInventory = storedPlayerData ? storedPlayerData.inventory : new Array(12).fill(null);
                     
-                    // If this is a new player (no stored data), add a test sword to the first inventory slot
+                    // If this is a new player (no stored data), add a training sword to the first inventory slot
                     if (!storedPlayerData && initialInventory[0] === null) {
                         const testSword = createTestSword();
                         initialInventory[0] = testSword;
-                        console.log(`Adding test sword to new player ${playerName}:`, testSword);
+                        console.log(`Adding training sword to new player ${playerName}:`, testSword);
                     }
                     
                     // Get visual data from join message or use stored data
@@ -619,6 +711,7 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         health: storedPlayerData ? storedPlayerData.health : 100,
                         maxHealth: storedPlayerData ? storedPlayerData.maxHealth : 100,
                         pyreals: storedPlayerData ? storedPlayerData.pyreals : 0,
+                        justConnected: true, // Flag to prevent immediate saving
                         equip: storedPlayerData ? storedPlayerData.equip : {
                             head: null, neck: null, shoulders: null, chest: null,
                             waist: null, legs: null, feet: null, wrists: null,
@@ -667,6 +760,10 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                     // Send player's own equipment and inventory data
                     const currentPlayerData = gameState.players.get(playerId);
                     console.log(`Sending initial inventory data to ${playerName}:`, currentPlayerData.inventory);
+                    console.log(`Sending initial equipment data to ${playerName}:`, currentPlayerData.equip);
+                    console.log(`Equipment mainhand:`, currentPlayerData.equip.mainhand);
+                    console.log(`Equipment offhand:`, currentPlayerData.equip.offhand);
+                    console.log(`Full equipment object being sent:`, JSON.stringify(currentPlayerData.equip, null, 2));
                     ws.send(JSON.stringify({
                         type: 'playerData',
                         equip: currentPlayerData.equip,
@@ -788,6 +885,9 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                     if (playerId && gameState.players.has(playerId) && data.equip) {
                         const player = gameState.players.get(playerId);
                         player.equip = data.equip;
+                        console.log(`Equipment updated for ${player.name}:`, JSON.stringify(player.equip, null, 2));
+                        // Save player data immediately when equipment changes
+                        savePlayerData(player.name, player);
                         // broadcast to all players so they can render current equipment
                         broadcastToAll({ type: 'equipUpdate', id: playerId, equip: player.equip, reach: player.reach });
                     }
@@ -1012,6 +1112,9 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                     type: 'inventoryUpdated',
                                     inventory: player.inventory
                                 }));
+                                
+                                // Save player data immediately after pickup
+                                savePlayerData(playerName, player);
                             }
                         }
                     }
@@ -1126,6 +1229,10 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                         player.equip[toSlot] = sourceItem;
                                     }
                                     
+                                    console.log(`Player ${player.name} equipped ${sourceItem.name} to ${toSlot}`);
+                                    // Save player data immediately when equipment changes
+                                    savePlayerData(player.name, player);
+                                    
                                     // Send updated equipment to the player
                                     ws.send(JSON.stringify({
                                         type: 'equipmentUpdated',
@@ -1138,6 +1245,9 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                         id: playerId,
                                         equip: player.equip
                                     });
+                                    
+                                    // Save player data immediately after equipment change
+                                    savePlayerData(playerName, player);
                                     
                                     // Also send inventory update if item came from bag
                                     if (fromWhere === 'bag') {
@@ -1165,6 +1275,10 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                         player.equip[toSlot] = sourceItem;
                                     }
                                     
+                                    console.log(`Player ${player.name} equipped ${sourceItem.name} to ${toSlot}`);
+                                    // Save player data immediately when equipment changes
+                                    savePlayerData(player.name, player);
+                                    
                                     // Send updated equipment to the player
                                     ws.send(JSON.stringify({
                                         type: 'equipmentUpdated',
@@ -1177,6 +1291,9 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                         id: playerId,
                                         equip: player.equip
                                     });
+                                    
+                                    // Save player data immediately after equipment change
+                                    savePlayerData(playerName, player);
                                     
                                     // Also send inventory update if item came from bag
                                     if (fromWhere === 'bag') {
@@ -1210,6 +1327,9 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                         id: playerId,
                                         equip: player.equip
                                     });
+                                    
+                                    // Save player data immediately after equipment change
+                                    savePlayerData(playerName, player);
                                 }
                             }
                         }
@@ -1284,6 +1404,9 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                     id: playerId,
                                     equip: player.equip
                                 });
+                                
+                                // Save player data immediately after equipment change
+                                savePlayerData(playerName, player);
                             }
                         }
                     }
@@ -1341,6 +1464,9 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                     id: playerId,
                                     equip: player.equip
                                 });
+                                
+                                // Save player data immediately after equipment change
+                                savePlayerData(playerName, player);
                             }
                             
                             // Send updated pyreals to the player
@@ -1526,6 +1652,9 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                             pyreals: player.pyreals
                         }));
                         
+                        // Save player data immediately after currency pickup
+                        savePlayerData(playerName, player);
+                        
                         // Broadcast player update to others (for pyreals change)
                         broadcastToOthers(playerId, {
                             type: 'playerUpdate',
@@ -1610,22 +1739,8 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
             // Store player data before removing them
             const playerData = gameState.players.get(playerId);
             
-            // Store player data for reconnection (no need to store world drop snapshots)
-            gameState.disconnectedPlayers.set(playerName, {
-                id: playerData.id,
-                name: playerData.name,
-                x: playerData.x,
-                y: playerData.y,
-                health: playerData.health,
-                maxHealth: playerData.maxHealth,
-                pyreals: playerData.pyreals,
-                equip: playerData.equip,
-                inventory: playerData.inventory,
-                shirtColor: playerData.shirtColor,
-                pantColor: playerData.pantColor,
-                equipmentColors: playerData.equipmentColors,
-                lastSaved: Date.now()
-            });
+            // Save player data to persistent storage
+            savePlayerData(playerName, playerData);
             
             // Notify other players
             broadcastToOthers(playerId, {
@@ -1636,7 +1751,7 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
             
             // Remove disconnected player to allow reconnection
             gameState.players.delete(playerId);
-            console.log(`${playerName} data stored for reconnection`);
+            console.log(`${playerName} data saved to persistent storage`);
             
             // If this was the last player, clear world drops to prevent accumulation
             const totalClients = httpWss.clients.size + (httpsWss ? httpsWss.clients.size : 0);
@@ -1731,50 +1846,19 @@ setInterval(() => {
 const positionSaveInterval = setInterval(() => {
     const now = Date.now();
     
-            // Update stored data for currently active players (for when they disconnect)
+                        // Periodically save player data to persistent storage
         for (const [playerId, playerData] of gameState.players) {
-            // Store current position in case they disconnect
-            if (!gameState.disconnectedPlayers.has(playerData.name)) {
-                
-                
-                gameState.disconnectedPlayers.set(playerData.name, {
-                    id: playerData.id,
-                    name: playerData.name,
-                    x: playerData.x,
-                    y: playerData.y,
-                    health: playerData.health,
-                    maxHealth: playerData.maxHealth,
-                    pyreals: playerData.pyreals,
-                    equip: playerData.equip,
-                    inventory: playerData.inventory,
-                    shirtColor: playerData.shirtColor,
-                    pantColor: playerData.pantColor,
-                    equipmentColors: playerData.equipmentColors,
-                                    lastSaved: now
-                });
-            } else {
-                // Update existing stored data
-                const stored = gameState.disconnectedPlayers.get(playerData.name);
-                stored.x = playerData.x;
-                stored.y = playerData.y;
-                stored.health = playerData.health;
-                stored.maxHealth = playerData.maxHealth;
-                stored.pyreals = playerData.pyreals;
-                stored.equip = playerData.equip;
-                stored.inventory = playerData.inventory;
-                stored.shirtColor = playerData.shirtColor;
-                stored.pantColor = playerData.pantColor;
-                stored.equipmentColors = playerData.equipmentColors;
-                stored.lastSaved = now;
+            // Skip saving if player just connected (to prevent overwriting loaded data)
+            if (playerData.justConnected) {
+                // Clear the flag after first save cycle
+                playerData.justConnected = false;
+                continue;
             }
+            // Save current player data to persistent storage every 30 seconds
+            savePlayerData(playerData.name, playerData);
         }
     
-    // Clean up old disconnected player data (older than 1 hour)
-    for (const [playerName, playerData] of gameState.disconnectedPlayers) {
-        if (now - playerData.lastSaved > 3600000) { // 1 hour
-            gameState.disconnectedPlayers.delete(playerName);
-        }
-    }
+    // Note: Player data is now stored persistently in files, no cleanup needed
     
     // Clean up old world drops (older than 5 minutes) to prevent accumulation
     const worldDropCleanupTime = 5 * 60 * 1000; // 5 minutes
@@ -1985,6 +2069,14 @@ const gameLoopInterval = setInterval(() => {
                             console.log(`Player ${p.name} dropped ${droppedItem.name} due to death`);
                         }
                         
+                        // Generate and broadcast death message
+                        const deathMessage = generateDeathMessage(p.name, enemy.name, enemy.weaponType || 'Claw');
+                        broadcastToAll({
+                            type: 'chatMessage',
+                            message: deathMessage,
+                            color: '#ffa500' // Light orange color
+                        });
+                        
                         // Broadcast death to all players
                         broadcastToAll({
                             type: 'playerDeath',
@@ -2125,6 +2217,14 @@ const gameLoopInterval = setInterval(() => {
                                 });
                                 console.log(`Player ${player.name} dropped ${droppedItem.name} due to enemy spell`);
                             }
+                            
+                            // Generate and broadcast death message
+                            const deathMessage = generateDeathMessage(player.name, 'Enemy Spellcaster', 'Fireball');
+                            broadcastToAll({
+                                type: 'chatMessage',
+                                message: deathMessage,
+                                color: '#ffa500' // Light orange color
+                            });
                             
                             // Broadcast death to all players
                             broadcastToAll({

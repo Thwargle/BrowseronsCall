@@ -1,0 +1,189 @@
+{
+  "id": "Thwargle",
+  "name": "Thwargle",
+  "x": 857.820719999963,
+  "y": 416,
+  "health": 332,
+  "maxHealth": 332,
+  "pyreals": 4099,
+  "equip": {
+    "head": null,
+    "neck": null,
+    "shoulders": {
+      "id": "armor-1756882056972-eyzhcml23",
+      "name": "Sacred Shoulders of the Legend",
+      "type": "armor",
+      "level": 5,
+      "rarity": "Legendary",
+      "short": "Legendary shoulders armor piece with enhanced protection",
+      "slot": "shoulders",
+      "stats": {
+        "Focus": 16,
+        "Mana": 7,
+        "Endurance": 5
+      },
+      "value": 420,
+      "icon": null
+    },
+    "chest": {
+      "id": "armor-1756881095575-aqib47iaf",
+      "name": "Trusted Chest of the Soldier",
+      "type": "armor",
+      "level": 5,
+      "rarity": "Uncommon",
+      "short": "Uncommon chest armor piece with enhanced protection",
+      "slot": "chest",
+      "stats": {
+        "Focus": 8,
+        "Mana": 7,
+        "Endurance": 5
+      },
+      "value": 90,
+      "icon": null
+    },
+    "waist": {
+      "id": "armor-1756881693291-hkp2xcvjd",
+      "name": "Sturdy Waist of the Soldier",
+      "type": "armor",
+      "level": 3,
+      "rarity": "Uncommon",
+      "short": "Uncommon waist armor piece with enhanced protection",
+      "slot": "waist",
+      "stats": {
+        "Focus": 8,
+        "Mana": 5,
+        "Endurance": 3
+      },
+      "value": 54,
+      "icon": null
+    },
+    "legs": null,
+    "feet": {
+      "id": "armor-1756881058169-469gz2c2p",
+      "name": "Feet",
+      "type": "armor",
+      "level": 3,
+      "rarity": "Rare",
+      "short": "Rare feet armor piece with enhanced protection",
+      "slot": "feet",
+      "stats": {
+        "Endurance": 9,
+        "Quickness": 5,
+        "Coordination": 2
+      },
+      "value": 72,
+      "icon": null
+    },
+    "wrists": {
+      "id": "armor-1756881746815-5h55bjqyk",
+      "name": "Trusted Wrists of the Soldier",
+      "type": "armor",
+      "level": 2,
+      "rarity": "Uncommon",
+      "short": "Uncommon wrists armor piece with enhanced protection",
+      "slot": "wrists",
+      "stats": {
+        "Focus": 5,
+        "Mana": 2,
+        "Endurance": 2
+      },
+      "value": 36,
+      "icon": null
+    },
+    "hands": null,
+    "mainhand": {
+      "id": "weapon-1756881928942-w2k0grq5p",
+      "name": "Exceptional Bow of the Master",
+      "type": "weapon",
+      "level": 5,
+      "rarity": "Epic",
+      "short": "Epic bow with enhanced properties",
+      "stats": {
+        "Coordination": 14,
+        "Quickness": 6
+      },
+      "dmgMin": 27,
+      "dmgMax": 41,
+      "value": 225,
+      "icon": null,
+      "subtype": "Bow"
+    },
+    "offhand": {
+      "id": "weapon-1756881742524-wxlpunzk5",
+      "name": "Solid Spear of the Fighter",
+      "type": "weapon",
+      "level": 8,
+      "rarity": "Uncommon",
+      "short": "Uncommon spear with enhanced properties",
+      "stats": {
+        "Strength": 11,
+        "Quickness": 11
+      },
+      "dmgMin": 29,
+      "dmgMax": 43,
+      "value": 180,
+      "icon": null,
+      "subtype": "Spear"
+    },
+    "trinket": null
+  },
+  "inventory": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "shirtColor": "#8b4513",
+  "pantColor": "#2f4f4f",
+  "equipmentColors": {
+    "shoulders": {
+      "type": "armor",
+      "rarity": "Legendary",
+      "slot": "shoulders",
+      "material": "metal"
+    },
+    "chest": {
+      "type": "armor",
+      "rarity": "Uncommon",
+      "slot": "chest",
+      "material": "metal"
+    },
+    "waist": {
+      "type": "armor",
+      "rarity": "Uncommon",
+      "slot": "waist",
+      "material": "metal"
+    },
+    "feet": {
+      "type": "armor",
+      "rarity": "Rare",
+      "slot": "feet",
+      "material": "metal"
+    },
+    "wrists": {
+      "type": "armor",
+      "rarity": "Uncommon",
+      "slot": "wrists",
+      "material": "metal"
+    },
+    "mainhand": {
+      "type": "weapon",
+      "rarity": "Epic",
+      "material": "Bow"
+    },
+    "offhand": {
+      "type": "weapon",
+      "rarity": "Uncommon",
+      "material": "Spear"
+    }
+  },
+  "lastSaved": 1756882093730
+}

@@ -1367,9 +1367,16 @@ function escapeHtml(s){
     return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); 
 }
 
-window.appendChat=function(name,msg){ 
+window.appendChat=function(name,msg,color){ 
     const d=document.createElement('div'); 
-    d.innerHTML=`<strong>${escapeHtml(name)}:</strong> ${escapeHtml(msg)}`; 
+    if (name && name.trim() !== '') {
+        d.innerHTML=`<strong>${escapeHtml(name)}</strong> ${escapeHtml(msg)}`; 
+    } else {
+        d.innerHTML = escapeHtml(msg);
+    }
+    if (color) {
+        d.style.color = color;
+    }
     const box=document.getElementById('chatBox'); 
     box.appendChild(d); 
     box.scrollTop = box.scrollHeight; 

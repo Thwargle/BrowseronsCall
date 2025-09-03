@@ -1052,7 +1052,16 @@ function initializeEngine() {
         
         // Spawners are now invisible but functional
         
-        const nearVendor = window.vendor && window.player && Math.hypot((window.player.x+window.player.w/2)-(window.vendor.x+window.vendor.w/2),(window.player.y+window.player.h/2)-(window.vendor.y+window.vendor.h/2)) < 140; 
+        const nearVendor = window.vendor && window.player && Math.hypot((window.player.x+window.player.w/2)-(window.vendor.x+window.vendor.w/2),(window.player.y+window.player.h/2)-(window.vendor.y+window.vendor.h/2)) < 80; 
+        
+        // Auto-close shop if player moves out of vendor range
+        if (!nearVendor && window.vendor) {
+            const shopPanel = document.getElementById('shopPanel');
+            if (shopPanel && shopPanel.style.display === 'block') {
+                shopPanel.style.display = 'none';
+            }
+        }
+        
         if(nearVendor && window.vendor){ 
             currentCtx.save(); 
             currentCtx.globalAlpha=0.85; 

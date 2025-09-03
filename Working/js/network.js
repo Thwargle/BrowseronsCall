@@ -227,6 +227,10 @@ window.handleServerMessage = function(msg) {
             case 'chat':
                 window.appendChat(msg.name || msg.id, msg.msg || msg.text || '');
                 break;
+            case 'chatMessage':
+                // Handle death messages and other server-generated chat messages
+                window.appendChat('', msg.message || '', msg.color || '#ffffff');
+                break;
             case 'joinRejected':
                 window.log('Server rejected join: ' + (msg.reason || 'Unknown reason'));
                 alert(msg.reason || 'Join rejected. Please choose a unique name.');
