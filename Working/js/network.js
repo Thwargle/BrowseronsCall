@@ -373,15 +373,9 @@ window.handleServerMessage = function(msg) {
                 
             case 'pyrealsUpdated':
                 // Update player's pyreals
-                console.log('Received pyrealsUpdated message:', msg.pyreals);
                 if (msg.pyreals !== undefined) {
                     if (window.player) {
                         window.player.pyreals = msg.pyreals;
-                    }
-                    if (window.log) {
-                        window.log(`Pyreals updated to: ${msg.pyreals}`);
-                    } else {
-                        console.log(`Pyreals updated to: ${msg.pyreals}`);
                     }
                 }
                 break;

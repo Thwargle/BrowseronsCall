@@ -1,0 +1,95 @@
+{
+  "name": "Sample Level",
+  "width": 3600,
+  "height": 600,
+  "floors": [
+    {
+      "x": 0,
+      "y": 550,
+      "width": 1200,
+      "height": 50,
+      "material": "dirt"
+    },
+    {
+      "x": 1200,
+      "y": 550,
+      "width": 800,
+      "height": 50,
+      "material": "grass"
+    },
+    {
+      "x": 2000,
+      "y": 550,
+      "width": 600,
+      "height": 50,
+      "material": "stone"
+    },
+    {
+      "x": 2600,
+      "y": 550,
+      "width": 1000,
+      "height": 50,
+      "material": "sand"
+    }
+  ],
+  "vendors": [
+    {
+      "id": "vendor_1",
+      "name": "Merchant",
+      "x": 600,
+      "y": 200,
+      "width": 48,
+      "height": 64
+    }
+  ],
+  "spawners": [
+    {
+      "id": "sp_1",
+      "x": 1200,
+      "y": 486,
+      "type": "basic",
+      "respawnTime": 5000,
+      "visibilityRange": 400,
+      "minLevel": 1,
+      "maxLevel": 3,
+      "currentEnemyId": null,
+      "respawnAt": 0
+    },
+    {
+      "id": "sp_2",
+      "x": 1800,
+      "y": 486,
+      "type": "elite",
+      "respawnTime": 8000,
+      "visibilityRange": 400,
+      "minLevel": 2,
+      "maxLevel": 4,
+      "currentEnemyId": null,
+      "respawnAt": 0
+    },
+    {
+      "id": "sp_3",
+      "x": 2400,
+      "y": 486,
+      "type": "spellcaster",
+      "respawnTime": 10000,
+      "visibilityRange": 500,
+      "minLevel": 3,
+      "maxLevel": 5,
+      "currentEnemyId": null,
+      "respawnAt": 0
+    },
+    {
+      "id": "sp_4",
+      "x": 3000,
+      "y": 486,
+      "type": "boss",
+      "respawnTime": 15000,
+      "visibilityRange": 600,
+      "minLevel": 4,
+      "maxLevel": 6,
+      "currentEnemyId": null,
+      "respawnAt": 0
+    }
+  ]
+}

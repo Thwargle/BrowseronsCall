@@ -13,7 +13,21 @@ window.GRAV = 1500;
 window.log = function(msg){ 
     const el=document.getElementById('log'); 
     if(el){ 
-        el.innerHTML = `<div>${new Date().toLocaleTimeString()} - ${msg}</div>` + el.innerHTML; 
+        // Create new message div
+        const messageDiv = document.createElement('div');
+        messageDiv.innerHTML = `${new Date().toLocaleTimeString()} - ${msg}`;
+        
+        // Add to the beginning of the log (newest messages at top)
+        el.insertBefore(messageDiv, el.firstChild);
+        
+        // Auto-scroll to show the newest message (at top)
+        el.scrollTop = 0;
+        
+        // Limit the number of messages to prevent memory issues
+        const maxMessages = 50;
+        while (el.children.length > maxMessages) {
+            el.removeChild(el.lastChild);
+        }
         
         // Update scrollbars after log update
         if (typeof window.managePanelScrollbars === 'function') {

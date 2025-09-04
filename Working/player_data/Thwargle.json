@@ -1,29 +1,44 @@
 {
   "id": "Thwargle",
   "name": "Thwargle",
-  "x": 754.418089999997,
-  "y": 416,
-  "health": 545,
-  "maxHealth": 545,
-  "pyreals": 5415,
+  "x": 246.68654999999924,
+  "y": 366,
+  "health": 1131,
+  "maxHealth": 1131,
+  "pyreals": 29713,
   "equip": {
     "head": {
-      "id": "armor-1756913846967-n8nr4a364",
-      "name": "Head",
+      "id": "armor-1756929855486-eg24ztebb",
+      "name": "Pristine Head of the Hero",
       "type": "armor",
-      "level": 3,
-      "rarity": "Rare",
-      "short": "Rare head armor piece with enhanced protection",
+      "level": 5,
+      "rarity": "Epic",
+      "short": "Epic head armor piece with enhanced protection",
       "slot": "head",
       "stats": {
-        "Endurance": 9,
-        "Health": 5,
-        "Coordination": 2
+        "Endurance": 12,
+        "Health": 7,
+        "Coordination": 4
       },
-      "value": 72,
+      "value": 180,
       "icon": null
     },
-    "neck": null,
+    "neck": {
+      "id": "armor-1756928269158-ils7r7h3b",
+      "name": "Exceptional Neck of the Hero",
+      "type": "armor",
+      "level": 4,
+      "rarity": "Epic",
+      "short": "Epic neck armor piece with enhanced protection",
+      "slot": "neck",
+      "stats": {
+        "Endurance": 12,
+        "Quickness": 7,
+        "Coordination": 3
+      },
+      "value": 144,
+      "icon": null
+    },
     "shoulders": {
       "id": "armor-1756882056972-eyzhcml23",
       "name": "Sacred Shoulders of the Legend",
@@ -41,292 +56,151 @@
       "icon": null
     },
     "chest": {
-      "id": "armor-1756881095575-aqib47iaf",
-      "name": "Trusted Chest of the Soldier",
+      "id": "armor-1756944560672-jhc11c8zp",
+      "name": "Transcendent Chest of the Gods",
       "type": "armor",
       "level": 5,
-      "rarity": "Uncommon",
-      "short": "Uncommon chest armor piece with enhanced protection",
+      "rarity": "Legendary",
+      "short": "Legendary chest armor piece with enhanced protection",
       "slot": "chest",
       "stats": {
-        "Focus": 8,
-        "Mana": 7,
-        "Endurance": 5
+        "Endurance": 15,
+        "Coordination": 5
       },
-      "value": 90,
+      "value": 420,
       "icon": null
     },
     "waist": {
-      "id": "armor-1756881693291-hkp2xcvjd",
-      "name": "Sturdy Waist of the Soldier",
+      "id": "armor-1756927063606-o7gq9uw34",
+      "name": "Mythical Waist of the Gods",
       "type": "armor",
-      "level": 3,
-      "rarity": "Uncommon",
-      "short": "Uncommon waist armor piece with enhanced protection",
+      "level": 4,
+      "rarity": "Legendary",
+      "short": "Legendary waist armor piece with enhanced protection",
       "slot": "waist",
       "stats": {
-        "Focus": 8,
-        "Mana": 5,
-        "Endurance": 3
+        "Endurance": 13,
+        "Quickness": 8,
+        "Coordination": 3
       },
-      "value": 54,
+      "value": 336,
       "icon": null
     },
-    "legs": null,
-    "feet": {
-      "id": "armor-1756881058169-469gz2c2p",
-      "name": "Feet",
+    "legs": {
+      "id": "armor-1756944634804-d5swkkdyb",
+      "name": "Ancient Legs of the Gods",
       "type": "armor",
-      "level": 3,
-      "rarity": "Rare",
-      "short": "Rare feet armor piece with enhanced protection",
+      "level": 6,
+      "rarity": "Legendary",
+      "short": "Legendary legs armor piece with enhanced protection",
+      "slot": "legs",
+      "stats": {
+        "Endurance": 17,
+        "Quickness": 11,
+        "Coordination": 4
+      },
+      "value": 504,
+      "icon": null
+    },
+    "feet": {
+      "id": "armor-1756945459423-9ale0rcfk",
+      "name": "Perfect Feet of the Elite",
+      "type": "armor",
+      "level": 6,
+      "rarity": "Epic",
+      "short": "Epic feet armor piece with enhanced protection",
       "slot": "feet",
       "stats": {
-        "Endurance": 9,
-        "Quickness": 5,
-        "Coordination": 2
+        "Endurance": 13,
+        "Coordination": 6
       },
-      "value": 72,
+      "value": 216,
       "icon": null
     },
     "wrists": {
-      "id": "armor-1756881746815-5h55bjqyk",
-      "name": "Trusted Wrists of the Soldier",
+      "id": "armor-1756946374429-84zv8zcbq",
+      "name": "Sacred Wrists of the Gods",
       "type": "armor",
-      "level": 2,
-      "rarity": "Uncommon",
-      "short": "Uncommon wrists armor piece with enhanced protection",
+      "level": 6,
+      "rarity": "Legendary",
+      "short": "Legendary wrists armor piece with enhanced protection",
       "slot": "wrists",
       "stats": {
-        "Focus": 5,
-        "Mana": 2,
-        "Endurance": 2
+        "Endurance": 16,
+        "Health": 8,
+        "Coordination": 4
       },
-      "value": 36,
+      "value": 504,
       "icon": null
     },
     "hands": {
-      "id": "armor-1756913852384-3ev97fm80",
-      "name": "Simple Hands of the Peasant",
+      "id": "armor-1756945869802-f29r7mvl8",
+      "name": "Eternal Hands of the Myth",
       "type": "armor",
-      "level": 5,
-      "rarity": "Common",
-      "short": "Common hands armor piece with enhanced protection",
+      "level": 3,
+      "rarity": "Legendary",
+      "short": "Legendary hands armor piece with enhanced protection",
       "slot": "hands",
       "stats": {
-        "Endurance": 7,
-        "Quickness": 5,
-        "Coordination": 4
+        "Endurance": 14,
+        "Quickness": 8,
+        "Coordination": 2
       },
-      "value": 60,
+      "value": 252,
       "icon": null
     },
     "mainhand": {
-      "id": "weapon-1756913846085-toxw14anp",
-      "name": "Masterwork Bow of the Hero",
+      "id": "weapon-1756928226190-8wwuwpdwh",
+      "name": "Sacred Wand of the Legend",
       "type": "weapon",
-      "level": 6,
-      "rarity": "Epic",
-      "short": "Epic bow with enhanced properties",
+      "level": 5,
+      "rarity": "Legendary",
+      "short": "Legendary wand with enhanced properties",
       "stats": {
-        "Coordination": 15,
-        "Quickness": 7
+        "Focus": 16,
+        "Mana": 6
       },
-      "dmgMin": 32,
-      "dmgMax": 49,
-      "value": 270,
+      "dmgMin": 38,
+      "dmgMax": 56,
+      "value": 525,
       "icon": null,
-      "subtype": "Bow"
+      "subtype": "Wand"
     },
     "offhand": {
-      "id": "weapon-1756913852384-s4v3b5w3d",
-      "name": "Sacred Sword of the Legend",
+      "id": "weapon-1756946201216-ti3mpuuh9",
+      "name": "Immortal Halberd of the Gods",
       "type": "weapon",
-      "level": 8,
+      "level": 4,
       "rarity": "Legendary",
-      "short": "Legendary sword with enhanced properties",
+      "short": "Legendary halberd with enhanced properties",
       "stats": {
-        "Strength": 20,
-        "Endurance": 10
+        "Strength": 15,
+        "Endurance": 5
       },
-      "dmgMin": 60,
-      "dmgMax": 90,
-      "value": 840,
+      "dmgMin": 30,
+      "dmgMax": 45,
+      "value": 420,
       "icon": null,
-      "subtype": "Sword"
+      "subtype": "Halberd"
     },
     "trinket": null
   },
   "inventory": [
-    {
-      "id": "armor-1756918028495-ajgso4w1s",
-      "name": "Waist",
-      "type": "armor",
-      "level": 4,
-      "rarity": "Rare",
-      "short": "Rare waist armor piece with enhanced protection",
-      "slot": "waist",
-      "stats": {
-        "Focus": 9,
-        "Mana": 6,
-        "Endurance": 4
-      },
-      "value": 96,
-      "icon": null
-    },
-    {
-      "id": "weapon-1756918035167-99b2re8wi",
-      "name": "Transcendent Hammer of the Legend",
-      "type": "weapon",
-      "level": 3,
-      "rarity": "Legendary",
-      "short": "Legendary hammer with enhanced properties",
-      "stats": {
-        "Strength": 14,
-        "Endurance": 4
-      },
-      "dmgMin": 23,
-      "dmgMax": 34,
-      "value": 315,
-      "icon": null,
-      "subtype": "Hammer"
-    },
-    {
-      "id": "weapon-1756918463779-axp0c5i5d",
-      "name": "Simple Hammer of the Novice",
-      "type": "weapon",
-      "level": 2,
-      "rarity": "Common",
-      "short": "Common hammer with enhanced properties",
-      "stats": {
-        "Strength": 5,
-        "Endurance": 2
-      },
-      "dmgMin": 6,
-      "dmgMax": 9,
-      "value": 30,
-      "icon": null,
-      "subtype": "Hammer"
-    },
-    {
-      "id": "weapon-1756918464070-yefp0d3qo",
-      "name": "Dagger",
-      "type": "weapon",
-      "level": 4,
-      "rarity": "Rare",
-      "short": "Rare dagger with enhanced properties",
-      "stats": {
-        "Quickness": 12,
-        "Coordination": 5
-      },
-      "dmgMin": 18,
-      "dmgMax": 27,
-      "value": 120,
-      "icon": null,
-      "subtype": "Dagger"
-    },
-    {
-      "id": "weapon-1756918466420-mqkpo0zyl",
-      "name": "Well-made Warhammer of the Warrior",
-      "type": "weapon",
-      "level": 2,
-      "rarity": "Uncommon",
-      "short": "Uncommon warhammer with enhanced properties",
-      "stats": {
-        "Strength": 5,
-        "Endurance": 2
-      },
-      "dmgMin": 7,
-      "dmgMax": 11,
-      "value": 45,
-      "icon": null,
-      "subtype": "Warhammer"
-    },
-    {
-      "id": "armor-1756918468852-sykzxn3vl",
-      "name": "Cheap Chest of the Commoner",
-      "type": "armor",
-      "level": 2,
-      "rarity": "Common",
-      "short": "Common chest armor piece with enhanced protection",
-      "slot": "chest",
-      "stats": {
-        "Focus": 3,
-        "Mana": 2,
-        "Endurance": 2
-      },
-      "value": 24,
-      "icon": null
-    },
-    {
-      "id": "weapon-1756918468852-408c0q04r",
-      "name": "Rapier",
-      "type": "weapon",
-      "level": 3,
-      "rarity": "Rare",
-      "short": "Rare rapier with enhanced properties",
-      "stats": {
-        "Quickness": 9,
-        "Coordination": 4
-      },
-      "dmgMin": 14,
-      "dmgMax": 20,
-      "value": 90,
-      "icon": null,
-      "subtype": "Rapier"
-    },
-    {
-      "id": "armor-1756918471284-sjc6f18sl",
-      "name": "Plain Head of the Peasant",
-      "type": "armor",
-      "level": 5,
-      "rarity": "Common",
-      "short": "Common head armor piece with enhanced protection",
-      "slot": "head",
-      "stats": {
-        "Focus": 7,
-        "Mana": 7,
-        "Endurance": 5
-      },
-      "value": 60,
-      "icon": null
-    },
-    {
-      "id": "armor-1756918474574-wh3udi7b3",
-      "name": "Durable Waist of the Warrior",
-      "type": "armor",
-      "level": 2,
-      "rarity": "Uncommon",
-      "short": "Uncommon waist armor piece with enhanced protection",
-      "slot": "waist",
-      "stats": {
-        "Endurance": 6,
-        "Coordination": 2
-      },
-      "value": 36,
-      "icon": null
-    },
-    {
-      "id": "armor-1756918474899-6mpnr7khe",
-      "name": "Durable Chest of the Soldier",
-      "type": "armor",
-      "level": 2,
-      "rarity": "Uncommon",
-      "short": "Uncommon chest armor piece with enhanced protection",
-      "slot": "chest",
-      "stats": {
-        "Endurance": 6,
-        "Quickness": 4,
-        "Coordination": 1
-      },
-      "value": 36,
-      "icon": null
-    },
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
     null,
     null
   ],
-  "shirtColor": "#228b22",
-  "pantColor": "#2b2b35",
+  "shirtColor": "#c0c0c0",
+  "pantColor": "#8b0000",
   "equipmentColors": {},
-  "lastSaved": 1756918529387
+  "lastSaved": 1756962727502
 }

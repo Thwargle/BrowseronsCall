@@ -26,10 +26,18 @@ window.binds = loadBinds();
 window.keys = {}; 
 
 window.addEventListener('keydown', e=>{ 
+    // Don't capture movement keys when typing in chat or other input fields
+    if (window.checkInputActive && window.checkInputActive()) {
+        return;
+    }
     window.keys[e.key.toLowerCase()] = true; 
 }); 
 
 window.addEventListener('keyup', e=>{ 
+    // Don't capture movement keys when typing in chat or other input fields
+    if (window.checkInputActive && window.checkInputActive()) {
+        return;
+    }
     window.keys[e.key.toLowerCase()] = false; 
 });
 
@@ -1217,11 +1225,7 @@ window.openShop=function(){
                     window.player.pyreals += (it.value||0); 
                     window.bag[idx]=null; 
                     window.refreshInventoryUI(); 
-                    if (window.log) {
-                        window.log('Sold '+it.name+' for '+(it.value||0)+' Pyreals');
-                    } else {
-                        console.log('Sold '+it.name+' for '+(it.value||0)+' Pyreals');
-                    } 
+                    // Item sold silently 
                 }
                 shopPanel.style.display='none'; 
             }); 
@@ -1268,11 +1272,7 @@ window.openShop=function(){
                     window.player.pyreals += (it.value||0);
                     window.equip[slot] = null;
                     window.refreshInventoryUI();
-                    if (window.log) {
-                        window.log('Sold '+it.name+' for '+(it.value||0)+' Pyreals');
-                    } else {
-                        console.log('Sold '+it.name+' for '+(it.value||0)+' Pyreals');
-                    }
+                    // Item sold silently
                 }
                 shopPanel.style.display='none';
             });
@@ -1329,11 +1329,7 @@ window.sellAllInventory = function() {
             
             window.refreshInventoryUI();
             
-            if (window.log) {
-                window.log(`Sold ${itemsSold} items for ${totalValue} Pyreals total`);
-            } else {
-                console.log(`Sold ${itemsSold} items for ${totalValue} Pyreals total`);
-            }
+            // Items sold silently
         }
     }
     

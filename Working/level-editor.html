@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browseron's Call - Level Editor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            overflow: hidden;
+        }
+
+        .editor-container {
+            display: flex;
+            height: 100vh;
+        }
+
+        .toolbar {
+            width: 300px;
+            background: #2a2a2a;
+            border-right: 2px solid #444;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .canvas-container {
+            flex: 1;
+            position: relative;
+            background: #333;
+            overflow: hidden;
+        }
+
+        #levelCanvas {
+            display: block;
+            background: #444;
+            cursor: crosshair;
+        }
+
+        .tool-section {
+            margin-bottom: 30px;
+            padding: 15px;
+            background: #333;
+            border-radius: 8px;
+            border: 1px solid #555;
+        }
+
+        .tool-section h3 {
+            color: #4CAF50;
+            margin-bottom: 15px;
+            font-size: 16px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .tool-group {
+            margin-bottom: 15px;
+        }
+
+        .tool-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #ccc;
+            font-size: 14px;
+        }
+
+        .tool-buttons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .tool-btn {
+            padding: 10px;
+            border: 2px solid #555;
+            background: #444;
+            color: #fff;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 12px;
+            text-align: center;
+        }
+
+        .tool-btn:hover {
+            border-color: #4CAF50;
+            background: #555;
+        }
+
+        .tool-btn.active {
+            border-color: #4CAF50;
+            background: #4CAF50;
+            color: #000;
+        }
+
+        .tool-btn.floor {
+            background: linear-gradient(45deg, #8B4513, #A0522D);
+        }
+
+        .tool-btn.grass {
+            background: linear-gradient(45deg, #228B22, #32CD32);
+        }
+
+        .tool-btn.stone {
+            background: linear-gradient(45deg, #696969, #A9A9A9);
+        }
+
+        .tool-btn.sand {
+            background: linear-gradient(45deg, #F4A460, #DEB887);
+        }
+
+        .tool-btn.water {
+            background: linear-gradient(45deg, #4169E1, #87CEEB);
+        }
+
+        .tool-btn.vendor {
+            background: linear-gradient(45deg, #FFD700, #FFA500);
+        }
+
+        .tool-btn.spawner {
+            background: linear-gradient(45deg, #DC143C, #FF6347);
+        }
+
+        .tool-btn.select {
+            background: linear-gradient(45deg, #4CAF50, #45a049);
+        }
+
+        .input-group {
+            margin-bottom: 10px;
+        }
+
+        .input-group input, .input-group select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #555;
+            background: #444;
+            color: #fff;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .input-group input:focus, .input-group select:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+
+        .spawner-config {
+            background: #2a2a2a;
+            padding: 10px;
+            border-radius: 6px;
+            margin-top: 10px;
+            border: 1px solid #555;
+        }
+
+        .spawner-config.hidden {
+            display: none;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .action-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+
+        .action-btn.primary {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .action-btn.secondary {
+            background: #2196F3;
+            color: white;
+        }
+
+        .action-btn.danger {
+            background: #f44336;
+            color: white;
+        }
+
+        .action-btn.undo {
+            background: #FF9800;
+            color: white;
+        }
+
+        .action-btn.undo:disabled {
+            background: #666;
+            color: #999;
+            cursor: not-allowed;
+        }
+
+        .action-btn:hover {
+            opacity: 0.8;
+            transform: translateY(-1px);
+        }
+
+        .level-info {
+            background: #2a2a2a;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid #555;
+        }
+
+        .level-info h4 {
+            color: #4CAF50;
+            margin-bottom: 10px;
+        }
+
+        .level-info p {
+            color: #ccc;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+
+        .grid-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            opacity: 0.3;
+        }
+
+        .status-bar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .status-info {
+            color: #ccc;
+            font-size: 14px;
+        }
+
+        .zoom-controls {
+            display: flex;
+            gap: 5px;
+        }
+
+        .zoom-btn {
+            padding: 5px 10px;
+            background: #444;
+            border: 1px solid #555;
+            color: #fff;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .zoom-btn:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body>
+    <div class="editor-container">
+        <div class="toolbar">
+            <div class="level-info">
+                <h4>Level Editor</h4>
+                <p>Canvas: <span id="canvasSize">3600 x 600</span></p>
+                <p>Grid: <span id="gridSize">32px</span></p>
+                <p>Zoom: <span id="zoomLevel">100%</span></p>
+            </div>
+
+            <div class="tool-section">
+                <h3>Controls</h3>
+                <div class="input-group">
+                    <small style="color: #888;">
+                        <strong>Left-click:</strong> Place objects<br>
+                        <strong>Right-click:</strong> Erase objects<br>
+                        <strong>Space + Drag:</strong> Pan view<br>
+                        <strong>Mouse Wheel:</strong> Zoom in/out<br>
+                        <strong>Select tool:</strong> Click objects to edit
+                    </small>
+                </div>
+            </div>
+
+            <div class="tool-section">
+                <h3>Floor Materials</h3>
+                <div class="tool-buttons">
+                    <button class="tool-btn floor active" data-material="dirt" title="Dirt">Dirt</button>
+                    <button class="tool-btn grass" data-material="grass" title="Grass">Grass</button>
+                    <button class="tool-btn stone" data-material="stone" title="Stone">Stone</button>
+                    <button class="tool-btn sand" data-material="sand" title="Sand">Sand</button>
+                    <button class="tool-btn water" data-material="water" title="Water">Water</button>
+                </div>
+                <div class="input-group">
+                    <label>Brush Size:</label>
+                    <input type="range" id="brushSize" min="1" max="10" value="3">
+                    <span id="brushSizeValue">3</span>
+                </div>
+            </div>
+
+            <div class="tool-section">
+                <h3>Objects</h3>
+                <div class="tool-buttons">
+                    <button class="tool-btn vendor" data-object="vendor" title="Vendor">Vendor</button>
+                    <button class="tool-btn spawner" data-object="spawner" title="Enemy Spawner">Spawner</button>
+                    <button class="tool-btn select" data-object="select" title="Select Objects">Select</button>
+                </div>
+                <div class="input-group">
+                    <small style="color: #888;">Right-click to erase objects</small>
+                </div>
+            </div>
+
+            <div class="tool-section">
+                <h3>Vendor Configuration</h3>
+                <div class="input-group">
+                    <label>Vendor ID:</label>
+                    <input type="text" id="vendorId" value="vendor_1" placeholder="vendor_1">
+                </div>
+                <div class="input-group">
+                    <label>Vendor Name:</label>
+                    <input type="text" id="vendorName" value="Merchant" placeholder="Merchant">
+                </div>
+            </div>
+
+            <div class="tool-section">
+                <h3>Spawner Configuration</h3>
+                <div class="spawner-config" id="spawnerConfig">
+                    <div class="input-group">
+                        <label>Spawner ID:</label>
+                        <input type="text" id="spawnerId" value="sp_1" placeholder="sp_1">
+                        <small>Auto-increments: sp_1, sp_2, sp_3...</small>
+                    </div>
+                    <div class="input-group">
+                        <label>Enemy Type:</label>
+                        <select id="spawnerType">
+                            <option value="basic">Basic</option>
+                            <option value="elite">Elite</option>
+                            <option value="boss">Boss</option>
+                            <option value="spellcaster">Spellcaster</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label>Respawn Time (ms):</label>
+                        <input type="number" id="respawnTime" value="8000" min="1000" max="60000">
+                    </div>
+                    <div class="input-group">
+                        <label>Visibility Range:</label>
+                        <input type="number" id="visibilityRange" value="400" min="100" max="1000">
+                    </div>
+                    <div class="input-group">
+                        <label>Min Level:</label>
+                        <input type="number" id="minLevel" value="1" min="1" max="10">
+                    </div>
+                    <div class="input-group">
+                        <label>Max Level:</label>
+                        <input type="number" id="maxLevel" value="3" min="1" max="10">
+                    </div>
+                </div>
+            </div>
+
+            <div class="tool-section">
+                <h3>Selected Object</h3>
+                <div class="selected-object-config" id="selectedObjectConfig">
+                    <div class="input-group">
+                        <label>Object Type:</label>
+                        <input type="text" id="selectedObjectType" readonly>
+                    </div>
+                    <div class="input-group">
+                        <label>Object ID:</label>
+                        <input type="text" id="selectedObjectId" readonly>
+                    </div>
+                    <div class="input-group" id="selectedVendorConfig" style="display: none;">
+                        <label>Vendor Name:</label>
+                        <input type="text" id="selectedVendorName">
+                    </div>
+                    <div class="input-group" id="selectedSpawnerConfig" style="display: none;">
+                        <label>Enemy Type:</label>
+                        <select id="selectedSpawnerType">
+                            <option value="basic">Basic</option>
+                            <option value="elite">Elite</option>
+                            <option value="boss">Boss</option>
+                            <option value="spellcaster">Spellcaster</option>
+                        </select>
+                    </div>
+                    <div class="input-group" id="selectedSpawnerConfig2" style="display: none;">
+                        <label>Respawn Time (ms):</label>
+                        <input type="number" id="selectedRespawnTime" min="1000" max="60000">
+                    </div>
+                    <div class="input-group" id="selectedSpawnerConfig3" style="display: none;">
+                        <label>Visibility Range:</label>
+                        <input type="number" id="selectedVisibilityRange" min="100" max="1000">
+                    </div>
+                    <div class="input-group" id="selectedSpawnerConfig4" style="display: none;">
+                        <label>Min Level:</label>
+                        <input type="number" id="selectedMinLevel" min="1" max="10">
+                    </div>
+                    <div class="input-group" id="selectedSpawnerConfig5" style="display: none;">
+                        <label>Max Level:</label>
+                        <input type="number" id="selectedMaxLevel" min="1" max="10">
+                    </div>
+                    <div class="action-buttons">
+                        <button class="action-btn primary" id="updateSelectedObject" style="display: none;">Update Object</button>
+                        <button class="action-btn danger" id="deleteSelectedObject" style="display: none;">Delete Object</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="action-buttons">
+                <button class="action-btn primary" id="saveLevel">Save Level</button>
+                <button class="action-btn secondary" id="loadLevel">Load Level</button>
+                <button class="action-btn undo" id="undoBtn" title="Undo (Ctrl+Z)">↶ Undo</button>
+                <button class="action-btn danger" id="clearLevel">Clear All</button>
+            </div>
+        </div>
+
+        <div class="canvas-container">
+            <canvas id="levelCanvas" width="3600" height="600"></canvas>
+            <div class="status-bar">
+                <div class="status-info">
+                    <span id="mousePos">X: 0, Y: 0</span> | 
+                    <span id="selectedTool">Floor: Dirt</span> | 
+                    <span id="objectCount">Objects: 0</span>
+                </div>
+                <div class="zoom-controls">
+                    <button class="zoom-btn" id="zoomOut">-</button>
+                    <button class="zoom-btn" id="zoomIn">+</button>
+                    <button class="zoom-btn" id="zoomReset">Reset</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/level-editor.js"></script>
+</body>
+</html>

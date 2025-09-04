@@ -122,10 +122,18 @@ function initializeEngine() {
 
     // Set up key event listeners for player movement
     window.addEventListener('keydown', (e) => {
+        // Don't capture movement keys when typing in chat or other input fields
+        if (window.checkInputActive && window.checkInputActive()) {
+            return;
+        }
         window.keys[e.key.toLowerCase()] = true;
     });
 
     window.addEventListener('keyup', (e) => {
+        // Don't capture movement keys when typing in chat or other input fields
+        if (window.checkInputActive && window.checkInputActive()) {
+            return;
+        }
         window.keys[e.key.toLowerCase()] = false;
     });
 
@@ -442,21 +450,38 @@ function initializeEngine() {
     chatInput.addEventListener('keydown', e=>{ 
         if(e.key==='Enter'){ 
             const text=chatInput.value.trim(); 
-            if(!text) return; 
+            if(!text) {
+                // If no text, just remove focus
+                chatInput.blur();
+                document.getElementById('game').focus();
+                return;
+            }
             window.wsSend({type:'chat',msg:text}); 
             chatInput.value=''; 
             
             // Return focus to the game canvas after sending chat (with small delay)
             setTimeout(() => {
+                chatInput.blur();
                 document.getElementById('game').focus();
             }, 10);
-        } 
+        } else if(e.key==='Escape') {
+            // Clear the input and remove focus
+            chatInput.value='';
+            chatInput.blur();
+            document.getElementById('game').focus();
+        }
     });
 
     // Global Enter key listener for focusing chat when in game
     document.addEventListener('keydown', function(e) {
-        // Only handle Enter key when the game canvas is focused and when connected
-        if (e.key === 'Enter' && document.activeElement === document.getElementById('game') && window.isConnected && window.isConnected()) {
+        // Handle Enter key when connected
+        if (e.key === 'Enter' && window.isConnected && window.isConnected()) {
+            // Only prevent chat focus if we're in a text input field (not just any input)
+            const activeElement = document.activeElement;
+            if (activeElement && activeElement.tagName === 'INPUT' && 
+                (activeElement.type === 'text' || activeElement.type === 'search' || !activeElement.type)) {
+                return; // Don't focus chat if we're typing in a text input
+            }
             e.preventDefault();
             chatInput.focus();
         }
@@ -631,11 +656,15 @@ function initializeEngine() {
     // Add input handling to suspend player movement
     let inputActive = false;
 
-    // Function to check if any input field is focused
-    function checkInputActive() {
-        const chatInput = document.getElementById('chatInput');
-        return chatInput && chatInput === document.activeElement;
-    }
+    // Function to check if any input field is focused - make it globally accessible
+    window.checkInputActive = function() {
+        const activeElement = document.activeElement;
+        if (!activeElement) return false;
+        
+        // Check if the active element is an input field, textarea, or select
+        const inputTypes = ['INPUT', 'TEXTAREA', 'SELECT'];
+        return inputTypes.includes(activeElement.tagName);
+    };
 
     // Add event listeners to input fields
     document.addEventListener('DOMContentLoaded', () => {
@@ -1560,7 +1589,10 @@ function initializeEngine() {
                 
                 // Debug: Log camera and player positions to verify centering
                 if (window.debugCamera) {
-                    console.log('Player x:', window.player.x, 'Camera X:', window.cameraX, 'Target:', targetCameraX);
+                    console.log('Player x:', window.player.x, 'Player w:', window.player.w, 'VIEW_W:', VIEW_W, 'Camera X:', window.cameraX, 'Target:', targetCameraX);
+                    console.log('Player center should be at:', window.player.x + window.player.w/2);
+                    console.log('Screen center is at:', VIEW_W/2);
+                    console.log('Camera should center player at screen position:', window.player.x + window.player.w/2 - window.cameraX);
                 }
             } 
             

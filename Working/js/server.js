@@ -21,12 +21,16 @@ const {
     generateLoot, 
     createTestSword 
 } = require('./loot');
+const LevelLoader = require('./level-loader');
 
 // Player data directory is now managed in player.js
 
 // Death message generation is now handled in player.js
 
 // Player data functions are now handled in player.js
+
+// Initialize level loader
+const levelLoader = new LevelLoader();
 
 // Create HTTP server
 const httpServer = http.createServer((req, res) => {
@@ -37,6 +41,18 @@ const httpServer = http.createServer((req, res) => {
                 console.error('Error loading game file:', err);
                 res.writeHead(500);
                 res.end('Error loading game');
+                return;
+            }
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            res.end(data);
+        });
+    } else if (req.url === '/level-editor.html') {
+        // Serve level editor
+        fs.readFile(path.join(__dirname, '..', 'level-editor.html'), (err, data) => {
+            if (err) {
+                console.error('Error loading level editor:', err);
+                res.writeHead(500);
+                res.end('Error loading level editor');
                 return;
             }
             res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -55,6 +71,17 @@ const httpServer = http.createServer((req, res) => {
                 res.end(data);
             }
         });
+    } else if (req.url === '/api/levels') {
+        // API endpoint to list available levels
+        const levels = levelLoader.listAvailableLevels();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(levels));
+    } else if (req.url.startsWith('/api/level/')) {
+        // API endpoint to get level data
+        const levelName = req.url.substring('/api/level/'.length);
+        const levelData = levelLoader.loadLevel(levelName);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(levelData));
     } else {
         res.writeHead(404);
         res.end('Not found');
@@ -96,6 +123,18 @@ try {
                 res.writeHead(200, { 'Content-Type': 'text/html' });
                 res.end(data);
             });
+        } else if (req.url === '/level-editor.html') {
+            // Serve level editor
+            fs.readFile(path.join(__dirname, '..', 'level-editor.html'), (err, data) => {
+                if (err) {
+                    console.error('Error loading level editor:', err);
+                    res.writeHead(500);
+                    res.end('Error loading level editor');
+                    return;
+                }
+                res.writeHead(200, { 'Content-Type': 'text/html' });
+                res.end(data);
+            });
         } else if (req.url.startsWith('/js/')) {
             const filePath = path.join(__dirname, req.url.substring(4));
             fs.readFile(filePath, (err, data) => {
@@ -107,6 +146,17 @@ try {
                     res.end(data);
                 }
             });
+        } else if (req.url === '/api/levels') {
+            // API endpoint to list available levels
+            const levels = levelLoader.listAvailableLevels();
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(levels));
+        } else if (req.url.startsWith('/api/level/')) {
+            // API endpoint to get level data
+            const levelName = req.url.substring('/api/level/'.length);
+            const levelData = levelLoader.loadLevel(levelName);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(levelData));
         } else {
             res.writeHead(404);
             res.end('Not found');
@@ -157,28 +207,32 @@ const GROUND_Y = 550;
 
 // NPC color generation is now managed in enemy.js
 
+// Load default level
+const defaultLevel = levelLoader.loadLevel('default');
+levelLoader.applyLevelToGameState({}, defaultLevel);
+
 const gameState = {
     players: new Map(),
     enemies: [],
     worldDrops: [],
     nextEnemyId: 1,
-    vendor: { id: 'vendor_1', x: 600, y: 200, w: 48, h: 64, vy: 0, colors: generateNPCColors() }
+    vendor: defaultLevel.vendors[0] ? {
+        id: defaultLevel.vendors[0].id,
+        x: defaultLevel.vendors[0].x,
+        y: defaultLevel.vendors[0].y,
+        w: defaultLevel.vendors[0].width,
+        h: defaultLevel.vendors[0].height,
+        vy: 0,
+        colors: generateNPCColors()
+    } : { id: 'vendor_1', x: 600, y: 200, w: 48, h: 64, vy: 0, colors: generateNPCColors() },
+    spawners: defaultLevel.spawners || [],
+    levelData: defaultLevel
 };
 
 // Debug: Log vendor colors at startup
 console.log('Server starting with vendor colors:', gameState.vendor.colors);
-
-// Debug: Set up a periodic check to see if vendor colors are still present
-// Removed logging to reduce console spam
-
-// Define enemy spawners to the right side of the world
-gameState.spawners = [
-    { id: 'sp_1', x: 2600, y: GROUND_Y - 64, currentEnemyId: null, respawnAt: Date.now() + 5000, visibilityRange: 400, type: 'basic' },
-    { id: 'sp_2', x: 3000, y: GROUND_Y - 64, currentEnemyId: null, respawnAt: Date.now() + 8000, visibilityRange: 400, type: 'elite' },
-    { id: 'sp_3', x: 3300, y: GROUND_Y - 64, currentEnemyId: null, respawnAt: Date.now() + 12000, visibilityRange: 400, type: 'elite' },
-    { id: 'sp_4', x: 3500, y: GROUND_Y - 64, currentEnemyId: null, respawnAt: Date.now() + 15000, visibilityRange: 400, type: 'boss' },
-    { id: 'sp_5', x: 2800, y: GROUND_Y - 64, currentEnemyId: null, respawnAt: Date.now() + 10000, visibilityRange: 500, type: 'spellcaster' }
-];
+console.log('Loaded level:', defaultLevel.name);
+console.log('Spawners configured:', gameState.spawners.length);
 
 // Loot generation functions are now managed in loot.js
 
@@ -292,6 +346,11 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         shirtColor: shirtColor,
                         pantColor: pantColor,
                         equipmentColors: equipmentColors,
+                        equip: storedPlayerData ? storedPlayerData.equip : {
+                            head: null, neck: null, shoulders: null, chest: null,
+                            waist: null, legs: null, feet: null, wrists: null,
+                            hands: null, mainhand: null, offhand: null, trinket: null
+                        },
                         reach: 70 // Default base reach
                     });
 
@@ -1272,6 +1331,52 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                 type: 'projectileCreated',
                                 ...projectile
                             });
+                        }
+                    }
+                    break;
+
+                case 'loadLevel':
+                    // Admin command to load a different level
+                    if (playerId && gameState.players.has(playerId)) {
+                        const player = gameState.players.get(playerId);
+                        // Only allow certain players to load levels (you can add admin check here)
+                        if (data.levelName) {
+                            console.log(`Loading level: ${data.levelName} requested by ${playerName}`);
+                            const newLevel = levelLoader.loadLevel(data.levelName);
+                            if (newLevel) {
+                                // Apply new level to game state
+                                levelLoader.applyLevelToGameState(gameState, newLevel);
+                                
+                                // Update game state with new level data
+                                gameState.levelData = newLevel;
+                                gameState.vendor = newLevel.vendors[0] ? {
+                                    id: newLevel.vendors[0].id,
+                                    x: newLevel.vendors[0].x,
+                                    y: newLevel.vendors[0].y,
+                                    w: newLevel.vendors[0].width,
+                                    h: newLevel.vendors[0].height,
+                                    vy: 0,
+                                    colors: generateNPCColors()
+                                } : gameState.vendor;
+                                gameState.spawners = newLevel.spawners || [];
+                                
+                                // Clear existing enemies and world drops
+                                gameState.enemies = [];
+                                gameState.worldDrops = [];
+                                
+                                // Broadcast level change to all players
+                                broadcastToAll({
+                                    type: 'levelChanged',
+                                    levelData: levelLoader.getLevelInfo()
+                                });
+                                
+                                console.log(`Level changed to: ${newLevel.name}`);
+                            } else {
+                                ws.send(JSON.stringify({
+                                    type: 'error',
+                                    message: `Level '${data.levelName}' not found`
+                                }));
+                            }
                         }
                     }
                     break;
