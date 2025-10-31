@@ -1,11 +1,11 @@
 {
   "id": "Thwargle",
   "name": "Thwargle",
-  "x": 246.68654999999924,
-  "y": 366,
-  "health": 1131,
-  "maxHealth": 1131,
-  "pyreals": 29713,
+  "x": 213.51474000000118,
+  "y": 486,
+  "health": 1091,
+  "maxHealth": 1091,
+  "pyreals": 36426,
   "equip": {
     "head": {
       "id": "armor-1756929855486-eg24ztebb",
@@ -167,21 +167,21 @@
       "subtype": "Wand"
     },
     "offhand": {
-      "id": "weapon-1756946201216-ti3mpuuh9",
-      "name": "Immortal Halberd of the Gods",
+      "id": "weapon-1761886745308-q2ed9w4t7",
+      "name": "Transcendent Spear of the Ancients",
       "type": "weapon",
-      "level": 4,
+      "level": 8,
       "rarity": "Legendary",
-      "short": "Legendary halberd with enhanced properties",
+      "short": "Legendary spear with enhanced properties",
       "stats": {
-        "Strength": 15,
-        "Endurance": 5
+        "Strength": 14,
+        "Quickness": 14
       },
-      "dmgMin": 30,
-      "dmgMax": 45,
-      "value": 420,
+      "dmgMin": 60,
+      "dmgMax": 90,
+      "value": 840,
       "icon": null,
-      "subtype": "Halberd"
+      "subtype": "Spear"
     },
     "trinket": null
   },
@@ -199,8 +199,8 @@
     null,
     null
   ],
-  "shirtColor": "#c0c0c0",
-  "pantColor": "#8b0000",
+  "shirtColor": "#6b8e23",
+  "pantColor": "#808080",
   "equipmentColors": {},
-  "lastSaved": 1756962727502
+  "lastSaved": 1761886791992
 }

@@ -33,7 +33,8 @@ class LevelEditor {
             height: 600,
             floors: [],
             vendors: [],
-            spawners: []
+            spawners: [],
+            portals: []
         };
         
         // Material definitions
@@ -41,6 +42,7 @@ class LevelEditor {
             dirt: { color: '#8B4513', pattern: 'dirt' },
             grass: { color: '#228B22', pattern: 'grass' },
             stone: { color: '#696969', pattern: 'stone' },
+            rock: { color: '#2F4F4F', pattern: 'rock' }, // Dark gray for rock
             sand: { color: '#F4A460', pattern: 'sand' },
             water: { color: '#4169E1', pattern: 'water' }
         };
@@ -93,8 +95,9 @@ class LevelEditor {
         document.getElementById('zoomOut').addEventListener('click', () => this.zoomOut());
         document.getElementById('zoomReset').addEventListener('click', () => this.zoomReset());
         
-        // Initialize spawner config as hidden
+        // Initialize spawner and portal configs as hidden
         document.getElementById('spawnerConfig').classList.add('hidden');
+        document.getElementById('portalConfig').classList.add('hidden');
         
         // Keyboard shortcuts (Ctrl+Z for undo)
         document.addEventListener('keydown', (e) => {
@@ -138,8 +141,13 @@ class LevelEditor {
                 document.getElementById('selectedTool').textContent = `Object: ${this.selectedTool}`;
                 if (this.selectedTool === 'spawner') {
                     document.getElementById('spawnerConfig').classList.remove('hidden');
+                    document.getElementById('portalConfig').classList.add('hidden');
+                } else if (this.selectedTool === 'portal') {
+                    document.getElementById('portalConfig').classList.remove('hidden');
+                    document.getElementById('spawnerConfig').classList.add('hidden');
                 } else {
                     document.getElementById('spawnerConfig').classList.add('hidden');
+                    document.getElementById('portalConfig').classList.add('hidden');
                 }
             }
         }
@@ -242,6 +250,8 @@ class LevelEditor {
             this.placeVendor(x, y);
         } else if (this.selectedTool === 'spawner') {
             this.placeSpawner(x, y);
+        } else if (this.selectedTool === 'portal') {
+            this.placePortal(x, y);
         }
     }
     
@@ -262,6 +272,17 @@ class LevelEditor {
             if (x >= spawner.x && x <= spawner.x + 32 &&
                 y >= spawner.y && y <= spawner.y + 32) {
                 this.selectedObject = { type: 'spawner', data: spawner };
+                this.showSelectedObjectUI();
+                this.render();
+                return;
+            }
+        }
+        
+        // Check portals
+        for (const portal of this.levelData.portals) {
+            if (x >= portal.x && x <= portal.x + portal.width &&
+                y >= portal.y && y <= portal.y + portal.height) {
+                this.selectedObject = { type: 'portal', data: portal };
                 this.showSelectedObjectUI();
                 this.render();
                 return;
@@ -304,8 +325,20 @@ class LevelEditor {
             document.getElementById('selectedMinLevel').value = obj.minLevel;
             document.getElementById('selectedMaxLevel').value = obj.maxLevel;
             
-            // Hide vendor config
+            // Hide vendor and portal configs
             document.getElementById('selectedVendorConfig').style.display = 'none';
+            document.getElementById('selectedPortalConfig').style.display = 'none';
+        } else if (this.selectedObject.type === 'portal') {
+            document.getElementById('selectedPortalConfig').style.display = 'block';
+            document.getElementById('selectedPortalTargetLevel').value = obj.targetLevel;
+            
+            // Hide vendor and spawner configs
+            document.getElementById('selectedVendorConfig').style.display = 'none';
+            document.getElementById('selectedSpawnerConfig').style.display = 'none';
+            document.getElementById('selectedSpawnerConfig2').style.display = 'none';
+            document.getElementById('selectedSpawnerConfig3').style.display = 'none';
+            document.getElementById('selectedSpawnerConfig4').style.display = 'none';
+            document.getElementById('selectedSpawnerConfig5').style.display = 'none';
         }
         
         document.getElementById('updateSelectedObject').style.display = 'block';
@@ -321,6 +354,7 @@ class LevelEditor {
         document.getElementById('selectedSpawnerConfig3').style.display = 'none';
         document.getElementById('selectedSpawnerConfig4').style.display = 'none';
         document.getElementById('selectedSpawnerConfig5').style.display = 'none';
+        document.getElementById('selectedPortalConfig').style.display = 'none';
         document.getElementById('updateSelectedObject').style.display = 'none';
         document.getElementById('deleteSelectedObject').style.display = 'none';
     }
@@ -338,6 +372,8 @@ class LevelEditor {
             obj.visibilityRange = parseInt(document.getElementById('selectedVisibilityRange').value);
             obj.minLevel = parseInt(document.getElementById('selectedMinLevel').value);
             obj.maxLevel = parseInt(document.getElementById('selectedMaxLevel').value);
+        } else if (this.selectedObject.type === 'portal') {
+            obj.targetLevel = document.getElementById('selectedPortalTargetLevel').value;
         }
         
         this.render();
@@ -352,6 +388,8 @@ class LevelEditor {
                 this.levelData.vendors = this.levelData.vendors.filter(v => v.id !== this.selectedObject.data.id);
             } else if (this.selectedObject.type === 'spawner') {
                 this.levelData.spawners = this.levelData.spawners.filter(s => s.id !== this.selectedObject.data.id);
+            } else if (this.selectedObject.type === 'portal') {
+                this.levelData.portals = this.levelData.portals.filter(p => p.id !== this.selectedObject.data.id);
             }
             
             this.selectedObject = null;
@@ -430,6 +468,30 @@ class LevelEditor {
         this.render();
     }
     
+    placePortal(x, y) {
+        // Auto-generate portal ID based on existing portals
+        const existingPortals = this.levelData.portals.length;
+        const portalId = `portal_${existingPortals + 1}`;
+        
+        const targetLevel = document.getElementById('portalTargetLevel').value || 'sample_level';
+        
+        // Add new portal
+        this.levelData.portals.push({
+            id: portalId,
+            x: Math.round(x),
+            y: Math.round(y),
+            width: 64,
+            height: 64,
+            targetLevel: targetLevel
+        });
+        
+        // Update the portal ID input for next portal
+        document.getElementById('portalId').value = `portal_${existingPortals + 2}`;
+        
+        this.saveState(); // Save state after placing portal
+        this.render();
+    }
+    
     eraseAt(x, y) {
         const gridX = Math.floor(x / this.gridSize) * this.gridSize;
         const gridY = Math.floor(y / this.gridSize) * this.gridSize;
@@ -450,6 +512,12 @@ class LevelEditor {
         this.levelData.spawners = this.levelData.spawners.filter(spawner => 
             !(spawner.x <= x && spawner.x + 32 >= x &&
               spawner.y <= y && spawner.y + 32 >= y)
+        );
+        
+        // Remove portals at this position
+        this.levelData.portals = this.levelData.portals.filter(portal => 
+            !(portal.x <= x && portal.x + portal.width >= x &&
+              portal.y <= y && portal.y + portal.height >= y)
         );
         
         this.saveState(); // Save state after erasing
@@ -495,12 +563,17 @@ class LevelEditor {
             this.drawSpawner(spawner);
         });
         
+        // Draw portals
+        this.levelData.portals.forEach(portal => {
+            this.drawPortal(portal);
+        });
+        
         // Restore context
         this.ctx.restore();
         
         // Update object count
-        const totalObjects = this.levelData.vendors.length + this.levelData.spawners.length;
-        document.getElementById('objectCount').textContent = `Vendors: ${this.levelData.vendors.length} | Spawners: ${this.levelData.spawners.length}`;
+        const totalObjects = this.levelData.vendors.length + this.levelData.spawners.length + this.levelData.portals.length;
+        document.getElementById('objectCount').textContent = `Vendors: ${this.levelData.vendors.length} | Spawners: ${this.levelData.spawners.length} | Portals: ${this.levelData.portals.length}`;
     }
     
     drawFloor(floor) {
@@ -614,6 +687,47 @@ class LevelEditor {
         this.ctx.stroke();
     }
     
+    drawPortal(portal) {
+        // Check if this portal is selected
+        const isSelected = this.selectedObject && 
+                          this.selectedObject.type === 'portal' && 
+                          this.selectedObject.data.id === portal.id;
+        
+        // Portal body (simplified version for editor)
+        this.ctx.fillStyle = isSelected ? '#FFE55C' : '#8A2BE2';
+        this.ctx.fillRect(portal.x, portal.y, portal.width, portal.height);
+        
+        // Portal border
+        this.ctx.strokeStyle = isSelected ? '#FFD700' : '#9370DB';
+        this.ctx.lineWidth = isSelected ? 3 : 2;
+        this.ctx.strokeRect(portal.x, portal.y, portal.width, portal.height);
+        
+        // Selection highlight
+        if (isSelected) {
+            this.ctx.strokeStyle = '#00FF00';
+            this.ctx.lineWidth = 2;
+            this.ctx.setLineDash([5, 5]);
+            this.ctx.strokeRect(portal.x - 2, portal.y - 2, portal.width + 4, portal.height + 4);
+            this.ctx.setLineDash([]);
+        }
+        
+        // Portal label
+        this.ctx.fillStyle = '#fff';
+        this.ctx.font = '12px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText('P', portal.x + portal.width/2, portal.y + portal.height/2 + 4);
+        
+        // Portal ID
+        this.ctx.fillStyle = '#fff';
+        this.ctx.font = '10px Arial';
+        this.ctx.fillText(portal.id, portal.x + portal.width/2, portal.y - 5);
+        
+        // Target level
+        this.ctx.fillStyle = '#fff';
+        this.ctx.font = '8px Arial';
+        this.ctx.fillText(portal.targetLevel, portal.x + portal.width/2, portal.y + portal.height + 12);
+    }
+    
     drawErasePreview() {
         // Get current mouse position relative to canvas
         const rect = this.canvas.getBoundingClientRect();
@@ -702,7 +816,8 @@ class LevelEditor {
                 height: 600,
                 floors: [],
                 vendors: [],
-                spawners: []
+                spawners: [],
+                portals: []
             };
             
             // Add default ground

@@ -208,11 +208,78 @@ const GROUND_Y = 550;
 // NPC color generation is now managed in enemy.js
 
 // Load default level
-const defaultLevel = levelLoader.loadLevel('default');
+console.log('Attempting to load sample_level...');
+const defaultLevel = levelLoader.loadLevel('sample_level');
+console.log('Loaded level data:', defaultLevel.name);
+console.log('Level has portals:', !!defaultLevel.portals, 'count:', (defaultLevel.portals || []).length);
 levelLoader.applyLevelToGameState({}, defaultLevel);
 
-const gameState = {
-    players: new Map(),
+// Per-level game states
+const levelGameStates = new Map();
+const globalPlayers = new Map(); // Global player registry
+
+// Helper functions for level-specific game state
+function getLevelGameState(levelName) {
+    if (!levelGameStates.has(levelName)) {
+        // Load level data and create game state
+        const levelData = levelLoader.loadLevel(levelName);
+        if (levelData) {
+            const levelState = {
+                enemies: [],
+                worldDrops: [],
+                nextEnemyId: 1,
+                vendor: levelData.vendors[0] ? {
+                    id: levelData.vendors[0].id,
+                    x: levelData.vendors[0].x,
+                    y: levelData.vendors[0].y,
+                    w: levelData.vendors[0].width,
+                    h: levelData.vendors[0].height,
+                    vy: 0,
+                    colors: generateNPCColors(),
+                    anim: {timer: 0, index: 0}
+                } : null,
+                spawners: (levelData.spawners || []).map(spawner => ({
+                    ...spawner,
+                    respawnAt: Date.now() + 2000 // Start respawning after 2 seconds
+                })),
+                portals: levelData.portals || [],
+                levelData: levelData
+            };
+            levelGameStates.set(levelName, levelState);
+        }
+    }
+    return levelGameStates.get(levelName);
+}
+
+function getPlayersInLevel(levelName) {
+    const players = [];
+    for (const [playerId, player] of globalPlayers) {
+        if (playerLevels.get(playerId) === levelName) {
+            players.push(player);
+        }
+    }
+    return players;
+}
+
+function broadcastToLevel(levelName, message) {
+    const playersInLevel = getPlayersInLevel(levelName);
+    for (const player of playersInLevel) {
+        // Find the WebSocket connection for this player
+        const httpClients = Array.from(httpWss.clients);
+        const httpsClients = httpsWss ? Array.from(httpsWss.clients) : [];
+        const allClients = [...httpClients, ...httpsClients];
+        
+        for (const ws of allClients) {
+            if (ws.playerId === player.id) {
+                ws.send(JSON.stringify(message));
+                break;
+            }
+        }
+    }
+}
+
+// Initialize default level game state
+const defaultLevelState = {
     enemies: [],
     worldDrops: [],
     nextEnemyId: 1,
@@ -223,14 +290,38 @@ const gameState = {
         w: defaultLevel.vendors[0].width,
         h: defaultLevel.vendors[0].height,
         vy: 0,
-        colors: generateNPCColors()
-    } : { id: 'vendor_1', x: 600, y: 200, w: 48, h: 64, vy: 0, colors: generateNPCColors() },
+        colors: generateNPCColors(),
+        anim: {timer: 0, index: 0}
+    } : null,
     spawners: defaultLevel.spawners || [],
+    portals: defaultLevel.portals || [],
     levelData: defaultLevel
 };
 
+levelGameStates.set('sample_level', defaultLevelState);
+
+// Legacy gameState for backward compatibility (will be removed)
+const gameState = {
+    players: globalPlayers,
+    enemies: defaultLevelState.enemies,
+    worldDrops: defaultLevelState.worldDrops,
+    nextEnemyId: defaultLevelState.nextEnemyId,
+    vendor: defaultLevelState.vendor,
+    spawners: defaultLevelState.spawners,
+    portals: defaultLevelState.portals,
+    levelData: defaultLevelState.levelData
+};
+
+console.log('Game state initialized with portals:', gameState.portals.length);
+if (gameState.portals.length > 0) {
+    console.log('Portal details:', gameState.portals);
+}
+
+// Per-player level tracking
+const playerLevels = new Map(); // playerId -> levelName
+
 // Debug: Log vendor colors at startup
-console.log('Server starting with vendor colors:', gameState.vendor.colors);
+console.log('Server starting with vendor colors:', gameState.vendor ? gameState.vendor.colors : 'No vendor');
 console.log('Loaded level:', defaultLevel.name);
 console.log('Spawners configured:', gameState.spawners.length);
 
@@ -289,12 +380,7 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                     // Store playerId on the WebSocket connection for broadcasting
                     ws.playerId = playerId;
                     
-                    // If this is the first player joining, clear any accumulated world drops for a clean start
-                    const totalClients = httpWss.clients.size + (httpsWss ? httpsWss.clients.size : 0);
-                    if (totalClients === 1 && gameState.worldDrops.length > 0) {
-                        console.log('First player joining, clearing accumulated world drops for clean start');
-                        gameState.worldDrops.length = 0;
-                    }
+                    // World drops are now managed per-level, so no need to clear global drops
                     
                     // Check if we have stored data for this player (reconnection)
                     let storedPlayerData = loadPlayerData(playerName);
@@ -317,7 +403,7 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                     const pantColor = data.pantColor || (storedPlayerData ? storedPlayerData.pantColor : null);
                     const equipmentColors = data.equipmentColors || (storedPlayerData ? storedPlayerData.equipmentColors : {});
                     
-                    gameState.players.set(playerId, {
+                    globalPlayers.set(playerId, {
                         id: playerId,
                         name: playerName,
                         x: storedPlayerData ? storedPlayerData.x : 80,
@@ -337,6 +423,9 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         equipmentColors: equipmentColors,
                         reach: 70 // Default base reach
                     });
+                    
+                    // Initialize player with sample level
+                    playerLevels.set(playerId, 'sample_level');
 
                     // Notify all players
                     broadcastToAll({
@@ -354,41 +443,65 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         reach: 70 // Default base reach
                     });
 
-                    // Always send current world drops to ensure consistency
-                    // The stored snapshot can become outdated when other players pick up items
-                    let groundLootToSend = gameState.worldDrops;
+                    // Get level-specific world drops
+                    let groundLootToSend = levelState.worldDrops;
                     if (storedPlayerData) {
                         console.log(`${playerName} reconnecting: sending current ground loot (${groundLootToSend.length} items)`);
                     } else {
                         console.log(`${playerName} new player: sending current ground loot (${groundLootToSend.length} items)`);
                     }
 
-                    // Send current game state to new player
+                    // Get level-specific game state
+                    const playerLevel = playerLevels.get(playerId) || 'sample_level';
+                    const levelState = getLevelGameState(playerLevel);
+                    const playersInLevel = getPlayersInLevel(playerLevel);
+                    
+                    // IMPORTANT: Add the current player to playersInLevel so they receive their own player data
+                    const currentPlayer = globalPlayers.get(playerId);
+                    if (currentPlayer && !playersInLevel.find(p => p.id === playerId)) {
+                        playersInLevel.push(currentPlayer);
+                    }
+                    
+                    // Ensure floors are always available - check multiple sources
+                    let floorsToSend = [];
+                    if (levelState.levelData && levelState.levelData.floors) {
+                        floorsToSend = levelState.levelData.floors;
+                    } else if (levelState.levelData && Array.isArray(levelState.levelData.floors)) {
+                        floorsToSend = levelState.levelData.floors;
+                    }
+                    
+                    // Send current game state to new player (level-specific)
                     const gameStateMsg = {
                         type: 'gameState',
-                        players: Array.from(gameState.players.values()),
-                        enemies: gameState.enemies,
-                         worldDrops: groundLootToSend,
-                         vendor: gameState.vendor,
-                         spawners: gameState.spawners
+                        players: playersInLevel,
+                        enemies: levelState.enemies,
+                        worldDrops: levelState.worldDrops,
+                        vendor: levelState.vendor,
+                        portals: levelState.portals || [],
+                        spawners: levelState.spawners,
+                        floors: floorsToSend
                     };
                     
-                    // Debug: Log vendor data being sent
-                    console.log(`Sending vendor to ${playerName} - hasColors: ${!!gameState.vendor.colors}`);
+                    // Debug: Log vendor and floor data being sent
+                    console.log(`Sending vendor to ${playerName} - hasVendor: ${!!levelState.vendor}, hasColors: ${!!(levelState.vendor && levelState.vendor.colors)}`);
+                    console.log(`Sending floors to ${playerName} - floors count: ${gameStateMsg.floors.length}`);
+                    if (gameStateMsg.floors.length > 0) {
+                        console.log(`First floor being sent:`, gameStateMsg.floors[0]);
+                    } else {
+                        console.warn(`WARNING: No floors found for level ${playerLevel}! levelData:`, !!levelState.levelData, 'floors:', levelState.levelData?.floors);
+                    }
                     
-                    // Send player's own equipment and inventory data
-                    const currentPlayerData = gameState.players.get(playerId);
-                    console.log(`Sending initial inventory data to ${playerName}:`, currentPlayerData.inventory);
-                    console.log(`Sending initial equipment data to ${playerName}:`, currentPlayerData.equip);
-                    console.log(`Equipment mainhand:`, currentPlayerData.equip.mainhand);
-                    console.log(`Equipment offhand:`, currentPlayerData.equip.offhand);
-                    console.log(`Full equipment object being sent:`, JSON.stringify(currentPlayerData.equip, null, 2));
-                    ws.send(JSON.stringify({
+                    // Send player's own equipment and inventory data FIRST, before gameState
+                    // This ensures inventory is loaded before the game renders
+                    const currentPlayerData = globalPlayers.get(playerId);
+                    const playerDataMsg = {
                         type: 'playerData',
                         equip: currentPlayerData.equip,
                         inventory: currentPlayerData.inventory
-                    }));
+                    };
+                    ws.send(JSON.stringify(playerDataMsg));
                     
+                    // Send gameState after playerData so inventory is ready
                     ws.send(JSON.stringify(gameStateMsg));
 
                     // Log the reconnection details for debugging
@@ -442,25 +555,46 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                     break;
 
                 case 'spawnEnemy':
-                    // Create new enemy
+                    // Create new enemy with floor collision
+                    const spawnX = typeof data.x === 'number' ? data.x : 500;
+                    let spawnY = GROUND_Y - 64;
+                    
+                    // Get level state first for enemy ID generation
+                    const currentPlayerLevel = playerLevels.get(playerId) || 'sample_level';
+                    const spawnLevelState = getLevelGameState(currentPlayerLevel);
+                    
+                    // Calculate proper Y position using floor collision
+                    const floors = spawnLevelState.levelData ? spawnLevelState.levelData.floors || [] : [];
+                    for (const floor of floors) {
+                        if (spawnX + 48 > floor.x && 
+                            spawnX < floor.x + floor.width && 
+                            spawnY + 64 > floor.y && 
+                            spawnY < floor.y + floor.height) {
+                            // Place enemy on top of floor
+                            spawnY = floor.y - 64;
+                            break;
+                        }
+                    }
+                    
                     const enemy = {
-                        id: gameState.nextEnemyId++,
-                        x: typeof data.x === 'number' ? data.x : 500,
-                        y: GROUND_Y - 64,
+                        id: spawnLevelState.nextEnemyId++,
+                        x: spawnX,
+                        y: spawnY,
                         level: data.level || 1,
                         health: 20 + (data.level || 1) * 12,
                         maxHealth: 20 + (data.level || 1) * 12,
-                        homeX: typeof data.x === 'number' ? data.x : 500,
-                        homeY: GROUND_Y - 64,
+                        homeX: spawnX,
+                        homeY: spawnY,
                         visibilityRange: 400,
                         name: getRandomEnemyName(),
                         colors: generateNPCColors()
                     };
                     
-                    gameState.enemies.push(enemy);
+                    // Add enemy to the appropriate level's game state
+                    spawnLevelState.enemies.push(enemy);
                     
-                    // Broadcast enemy spawn to all players - only send necessary properties
-                    broadcastToAll({
+                    // Broadcast enemy spawn to players in the same level only
+                    broadcastToLevel(currentPlayerLevel, {
                         type: 'spawnEnemy',
                         id: enemy.id,
                         x: enemy.x,
@@ -535,13 +669,15 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                     break;
 
                 case 'enemyUpdate':
-                    // Update enemy state
-                    const enemyIndex = gameState.enemies.findIndex(e => e.id === data.id);
+                    // Update enemy state in the player's current level
+                    const enemyUpdatePlayerLevel = playerLevels.get(playerId) || 'sample_level';
+                    const enemyUpdateLevelState = getLevelGameState(enemyUpdatePlayerLevel);
+                    const enemyIndex = enemyUpdateLevelState.enemies.findIndex(e => e.id === data.id);
                     if (enemyIndex !== -1) {
-                        Object.assign(gameState.enemies[enemyIndex], data);
+                        Object.assign(enemyUpdateLevelState.enemies[enemyIndex], data);
                         
-                        // Broadcast enemy update to other players - include colors for visual consistency
-                        broadcastToOthers(playerId, {
+                        // Broadcast enemy update to other players in the same level
+                        broadcastToLevel(enemyUpdatePlayerLevel, {
                             type: 'enemyUpdate',
                             id: data.id,
                             x: data.x,
@@ -552,21 +688,24 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                             type: data.type,
                             dead: data.dead,
                             name: data.name,
-                            colors: gameState.enemies[enemyIndex].colors
+                            colors: enemyUpdateLevelState.enemies[enemyIndex].colors
                         });
                     }
                     break;
 
                 case 'attackEnemy':
-                    const targetEnemy = gameState.enemies.find(e => e.id === data.id);
+                    // Find enemy in the player's current level
+                    const attackPlayerLevel = playerLevels.get(playerId) || 'sample_level';
+                    const attackLevelState = getLevelGameState(attackPlayerLevel);
+                    const targetEnemy = attackLevelState.enemies.find(e => e.id === data.id);
                     if (targetEnemy && !targetEnemy.dead) {
                         targetEnemy.health -= data.damage;
                         if (targetEnemy.health <= 0) {
                             targetEnemy.dead = true;
-                            // Remove dead enemy from array
-                            const enemyIndex = gameState.enemies.findIndex(e => e.id === targetEnemy.id);
+                            // Remove dead enemy from level's array
+                            const enemyIndex = attackLevelState.enemies.findIndex(e => e.id === targetEnemy.id);
                             if (enemyIndex !== -1) {
-                                gameState.enemies.splice(enemyIndex, 1);
+                                attackLevelState.enemies.splice(enemyIndex, 1);
                             }
                             // Spawn loot when enemy dies using loot tables
                             const enemyType = targetEnemy.type || 'basic';
@@ -586,19 +725,19 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                     grounded: false,
                                     noPickupUntil: Date.now() + 1000
                                 };
-                                gameState.worldDrops.push(drop);
-                                // Broadcasting loot drop
-                                broadcastToAll({ type: 'dropItem', ...drop });
+                                attackLevelState.worldDrops.push(drop);
+                                // Broadcasting loot drop to players in this level
+                                broadcastToLevel(attackPlayerLevel, { type: 'dropItem', ...drop });
                             }
-                            // Schedule respawn
-                            const spawner = gameState.spawners.find(s => s.id === targetEnemy.spawnerId);
+                            // Schedule respawn using level-specific spawners
+                            const spawner = attackLevelState.spawners.find(s => s.id === targetEnemy.spawnerId);
                             if (spawner) {
                                 spawner.currentEnemyId = null;
                                 spawner.respawnAt = Date.now() + 8000; // 8 seconds respawn
                             }
-                            broadcastToAll({ type: 'enemyDeath', id: targetEnemy.id });
+                            broadcastToLevel(attackPlayerLevel, { type: 'enemyDeath', id: targetEnemy.id });
                         } else {
-                            broadcastToAll({ 
+                            broadcastToLevel(attackPlayerLevel, { 
                                 type: 'enemyUpdate', 
                                 id: targetEnemy.id, 
                                 health: targetEnemy.health,
@@ -608,10 +747,107 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                     }
                     break;
 
-                case 'dropItem':
-                    // Add item drop to world with proper physics
+                case 'portalEnter':
+                    // Handle portal collision and level switching per player
                     if (playerId && gameState.players.has(playerId)) {
                         const player = gameState.players.get(playerId);
+                        const targetLevel = data.targetLevel;
+                        
+                        if (targetLevel) {
+                            console.log(`Player ${player.name} attempting to enter portal to level: ${targetLevel}`);
+                            
+                            // Load the target level
+                            const newLevelData = levelLoader.loadLevel(targetLevel);
+                            if (newLevelData) {
+                                console.log(`Loaded level: ${newLevelData.name}`);
+                                console.log(`- Floors: ${newLevelData.floors ? newLevelData.floors.length : 0}`);
+                                console.log(`- Vendors: ${newLevelData.vendors ? newLevelData.vendors.length : 0}`);
+                                console.log(`- Spawners: ${newLevelData.spawners ? newLevelData.spawners.length : 0}`);
+                                console.log(`- Portals: ${newLevelData.portals ? newLevelData.portals.length : 0}`);
+                                
+                                // Update player's current level
+                                playerLevels.set(playerId, targetLevel);
+                                
+                                // Get or create the level-specific game state
+                                // If level state already exists, ensure it's fresh (enemies and drops cleared for this player)
+                                const levelState = getLevelGameState(targetLevel);
+                                
+                                // NOTE: We don't clear levelState.enemies or levelState.worldDrops here because
+                                // other players might be in this level. Each level maintains its own state.
+                                // The client will receive the current state of the level.
+                                
+                                // Move player to spawn position in new level
+                                player.x = newLevelData.spawn ? newLevelData.spawn.x : 80;
+                                player.y = newLevelData.spawn ? newLevelData.spawn.y : 0;
+                                
+                                // Get players in the new level
+                                const playersInNewLevel = getPlayersInLevel(targetLevel);
+                                
+                                // Ensure floors are always available
+                                let floorsToSend = [];
+                                if (newLevelData && newLevelData.floors && Array.isArray(newLevelData.floors)) {
+                                    floorsToSend = newLevelData.floors;
+                                } else if (levelState.levelData && levelState.levelData.floors && Array.isArray(levelState.levelData.floors)) {
+                                    floorsToSend = levelState.levelData.floors;
+                                }
+                                
+                                // Send level change only to this player with level-specific data
+                                // IMPORTANT: Send empty enemies array initially - enemies will spawn from spawners after floors render
+                                // This ensures enemies appear on top of floors, not inside them
+                                const levelChangeMsg = {
+                                    type: 'levelChange',
+                                    levelName: newLevelData.name,
+                                    levelData: newLevelData,
+                                    players: playersInNewLevel,
+                                    enemies: [], // Start with empty - enemies spawn from spawners after client loads floors
+                                    worldDrops: levelState.worldDrops || [], // Only send drops that belong to this level
+                                    vendor: levelState.vendor,
+                                    portals: levelState.portals || [],
+                                    spawners: levelState.spawners,
+                                    floors: floorsToSend
+                                };
+                                
+                                // Reset spawner respawn timers to ensure enemies spawn soon after level loads
+                                // This gives time for floors to render on client first
+                                if (levelState.spawners) {
+                                    levelState.spawners.forEach(spawner => {
+                                        // Reset respawn timer to spawn enemies 2 seconds after level change
+                                        // This ensures floors render first
+                                        spawner.respawnAt = Date.now() + 2000;
+                                        spawner.currentEnemyId = null; // Clear any existing enemy references
+                                    });
+                                    console.log(`Reset ${levelState.spawners.length} spawners for level ${targetLevel} - enemies will spawn in 2 seconds`);
+                                }
+                                
+                                console.log('Level change data being sent:');
+                                console.log('- Vendor:', levelState.vendor ? `${levelState.vendor.id} at (${levelState.vendor.x}, ${levelState.vendor.y})` : 'None');
+                                console.log('- Spawners:', levelState.spawners.length);
+                                console.log('- Enemies:', levelState.enemies.length);
+                                console.log('- World Drops:', levelState.worldDrops.length);
+                                console.log('- Floors:', floorsToSend.length);
+                                
+                                console.log('Sending levelChange message:', JSON.stringify(levelChangeMsg, null, 2));
+                                ws.send(JSON.stringify(levelChangeMsg));
+                                
+                                console.log(`Player ${player.name} successfully entered portal to level: ${targetLevel}`);
+                            } else {
+                                console.log(`Failed to load level: ${targetLevel}`);
+                                // Send error message to player
+                                ws.send(JSON.stringify({
+                                    type: 'chatMessage',
+                                    message: `Level ${targetLevel} not found!`
+                                }));
+                            }
+                        }
+                    }
+                    break;
+
+                case 'dropItem':
+                    // Add item drop to world with proper physics
+                    if (playerId && globalPlayers.has(playerId)) {
+                        const player = globalPlayers.get(playerId);
+                        const dropPlayerLevel = playerLevels.get(playerId) || 'sample_level';
+                        const dropLevelState = getLevelGameState(dropPlayerLevel);
                         
                         // Find the item in the player's inventory or equipment
                         let item = null;
@@ -638,10 +874,10 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                             noPickupUntil: Date.now() + 1000
                         };
                             
-                            gameState.worldDrops.push(drop);
+                            dropLevelState.worldDrops.push(drop);
                             
-                            // Broadcast item drop to all players
-                            broadcastToAll({
+                            // Broadcast item drop to players in this level only
+                            broadcastToLevel(dropPlayerLevel, {
                                 type: 'dropItem',
                                 ...drop
                             });
@@ -665,16 +901,18 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
 
                 case 'pickupItem':
                     // Handle picking up items from the world and placing them in inventory
-                    if (playerId && gameState.players.has(playerId)) {
-                        const player = gameState.players.get(playerId);
+                    if (playerId && globalPlayers.has(playerId)) {
+                        const player = globalPlayers.get(playerId);
+                        const pickupPlayerLevel = playerLevels.get(playerId) || 'sample_level';
+                        const pickupLevelState = getLevelGameState(pickupPlayerLevel);
                         const { dropId, slotIndex } = data;
                         
                         console.log(`Player ${playerName} picking up item from drop ${dropId} to slot ${slotIndex}`);
                         
                         // Find the world drop
-                        const dropIndex = gameState.worldDrops.findIndex(d => d.id === dropId);
+                        const dropIndex = pickupLevelState.worldDrops.findIndex(d => d.id === dropId);
                         if (dropIndex !== -1) {
-                            const drop = gameState.worldDrops[dropIndex];
+                            const drop = pickupLevelState.worldDrops[dropIndex];
                             const item = drop.item;
                             
                             if (item && slotIndex !== null && slotIndex < player.inventory.length) {
@@ -697,10 +935,10 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                         noPickupUntil: Date.now() + 1000
                                     };
                                     
-                                    gameState.worldDrops.push(newDrop);
+                                    pickupLevelState.worldDrops.push(newDrop);
                                     
-                                    // Broadcast the new drop to all players
-                                    broadcastToAll({
+                                    // Broadcast the new drop to players in this level only
+                                    broadcastToLevel(pickupPlayerLevel, {
                                         type: 'dropItem',
                                         ...newDrop
                                     });
@@ -710,10 +948,10 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                 }
                                 
                                 // Remove the original drop from the world
-                                gameState.worldDrops.splice(dropIndex, 1);
+                                pickupLevelState.worldDrops.splice(dropIndex, 1);
                                 
-                                // Broadcast item pickup to all players
-                                broadcastToAll({
+                                // Broadcast item pickup to players in this level only
+                                broadcastToLevel(pickupPlayerLevel, {
                                     type: 'pickupItem',
                                     dropId: dropId,
                                     playerId: playerId
@@ -735,8 +973,10 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
 
                 case 'moveItem':
                     // Handle moving items between inventory slots, equipment slots, or from world to inventory
-                    if (playerId && gameState.players.has(playerId)) {
-                        const player = gameState.players.get(playerId);
+                    if (playerId && globalPlayers.has(playerId)) {
+                        const player = globalPlayers.get(playerId);
+                        const movePlayerLevel = playerLevels.get(playerId) || 'sample_level';
+                        const moveLevelState = getLevelGameState(movePlayerLevel);
                         const { itemId, fromWhere, fromIndex, fromSlot, toWhere, toIndex, toSlot } = data;
                         
                         console.log(`Player ${playerName} moving item ${itemId} from ${fromWhere} to ${toWhere}`);
@@ -761,12 +1001,12 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                             }
                         } else if (fromWhere === 'world') {
                             // Find item in world drops
-                            const worldDropIndex = gameState.worldDrops.findIndex(d => d.item && d.item.id === itemId);
+                            const worldDropIndex = moveLevelState.worldDrops.findIndex(d => d.item && d.item.id === itemId);
                             if (worldDropIndex !== -1) {
-                                sourceItem = gameState.worldDrops[worldDropIndex].item;
-                                gameState.worldDrops.splice(worldDropIndex, 1);
-                                // Broadcast removal of world drop
-                                broadcastToAll({ type: 'pickupItem', dropId: gameState.worldDrops[worldDropIndex]?.id, playerId: playerId });
+                                sourceItem = moveLevelState.worldDrops[worldDropIndex].item;
+                                moveLevelState.worldDrops.splice(worldDropIndex, 1);
+                                // Broadcast removal of world drop to players in this level only
+                                broadcastToLevel(movePlayerLevel, { type: 'pickupItem', dropId: moveLevelState.worldDrops[worldDropIndex]?.id, playerId: playerId });
                             }
                         }
                         
@@ -797,9 +1037,9 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                             grounded: false,
                                             noPickupUntil: Date.now() + 1000
                                         };
-                                        gameState.worldDrops.push(displacedDrop);
-                                        // Broadcast the new world drop
-                                        broadcastToAll({
+                                        moveLevelState.worldDrops.push(displacedDrop);
+                                        // Broadcast the new world drop to players in this level only
+                                        broadcastToLevel(movePlayerLevel, {
                                             type: 'dropItem',
                                             ...displacedDrop
                                         });
@@ -951,8 +1191,10 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
 
                 case 'dropItem':
                     // Handle dropping items from inventory or equipment to the world
-                    if (playerId && gameState.players.has(playerId)) {
-                        const player = gameState.players.get(playerId);
+                    if (playerId && globalPlayers.has(playerId)) {
+                        const player = globalPlayers.get(playerId);
+                        const dropPlayerLevel = playerLevels.get(playerId) || 'sample_level';
+                        const dropLevelState = getLevelGameState(dropPlayerLevel);
                         const { itemId, fromWhere, fromIndex, fromSlot, x, y } = data;
                         
                         console.log(`Player ${playerName} dropping item ${itemId} from ${fromWhere}`);
@@ -990,10 +1232,10 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                 noPickupUntil: Date.now() + 1000
                             };
                             
-                            gameState.worldDrops.push(drop);
+                            dropLevelState.worldDrops.push(drop);
                             
-                            // Broadcast item drop to all players
-                            broadcastToAll({
+                            // Broadcast item drop to players in this level only
+                            broadcastToLevel(dropPlayerLevel, {
                                 type: 'dropItem',
                                 ...drop
                             });
@@ -1280,8 +1522,10 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                     break;
 
                 case 'shootProjectile':
-                    if (playerId && gameState.players.has(playerId)) {
-                        const player = gameState.players.get(playerId);
+                    if (playerId && globalPlayers.has(playerId)) {
+                        const player = globalPlayers.get(playerId);
+                        const playerLevel = playerLevels.get(playerId) || 'sample_level';
+                        const levelState = getLevelGameState(playerLevel);
                         const weaponType = data.weaponType;
                         const direction = data.direction; // 'left' or 'right'
                         const playerX = player.x;
@@ -1322,12 +1566,12 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         }
                         
                         if (projectile) {
-                            // Add to game state
-                            if (!gameState.projectiles) gameState.projectiles = [];
-                            gameState.projectiles.push(projectile);
+                            // Add to level-specific game state
+                            if (!levelState.projectiles) levelState.projectiles = [];
+                            levelState.projectiles.push(projectile);
                             
-                            // Broadcast projectile creation to all players
-                            broadcastToAll({
+                            // Broadcast projectile creation to players in this level only
+                            broadcastToLevel(playerLevel, {
                                 type: 'projectileCreated',
                                 ...projectile
                             });
@@ -1357,7 +1601,7 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                     h: newLevel.vendors[0].height,
                                     vy: 0,
                                     colors: generateNPCColors()
-                                } : gameState.vendor;
+                                } : null;
                                 gameState.spawners = newLevel.spawners || [];
                                 
                                 // Clear existing enemies and world drops
@@ -1409,6 +1653,7 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
             
             // Remove disconnected player to allow reconnection
             gameState.players.delete(playerId);
+            playerLevels.delete(playerId);
             console.log(`${playerName} data saved to persistent storage`);
             
             // If this was the last player, clear world drops to prevent accumulation
@@ -1458,17 +1703,29 @@ const interval = setInterval(() => {
     });
 }, 30000);
 
-// High-frequency projectile updates for smoothness (60 FPS)
+// High-frequency projectile updates for smoothness (60 FPS) - level-based
 setInterval(() => {
-    if (gameState.projectiles && gameState.projectiles.length > 0) {
-        const now = Date.now();
-        const dt = 0.016; // 60 FPS
+    const now = Date.now();
+    const dt = 0.016; // 60 FPS
+    
+    // Process projectiles for each level separately
+    for (const [levelName, levelState] of levelGameStates) {
+        if (!levelState.projectiles || levelState.projectiles.length === 0) continue;
         
-        for (let i = 0; i < gameState.projectiles.length; i++) {
-            const projectile = gameState.projectiles[i];
+        const playersInLevel = getPlayersInLevel(levelName);
+        if (playersInLevel.length === 0) continue;
+        
+        for (let i = levelState.projectiles.length - 1; i >= 0; i--) {
+            const projectile = levelState.projectiles[i];
             
             // Check if projectile has expired
             if (now - projectile.createdAt > projectile.lifeTime) {
+                levelState.projectiles.splice(i, 1);
+                // Broadcast destruction to players
+                broadcastToLevel(levelName, {
+                    type: 'projectileDestroyed',
+                    id: projectile.id
+                });
                 continue;
             }
             
@@ -1482,12 +1739,32 @@ setInterval(() => {
             // Update position
             projectile.x += projectile.vx * dt;
             projectile.y += projectile.vy * dt;
+            
+            // Remove projectiles that go off-screen (beyond reasonable bounds)
+            // Check if projectile is way off-screen to the left, right, or below
+            const levelWidth = levelState.levelData ? (levelState.levelData.width || 3600) : 3600;
+            const levelHeight = levelState.levelData ? (levelState.levelData.height || 600) : 600;
+            const margin = 500; // Remove if beyond this margin outside level bounds
+            
+            if (projectile.x < -margin || 
+                projectile.x > levelWidth + margin || 
+                projectile.y > levelHeight + margin ||
+                projectile.y < -margin) {
+                // Projectile is off-screen, remove it
+                const destroyedProjectile = levelState.projectiles.splice(i, 1)[0];
+                // Broadcast destruction to players
+                broadcastToLevel(levelName, {
+                    type: 'projectileDestroyed',
+                    id: destroyedProjectile.id
+                });
+                continue;
+            }
         }
         
-        // Broadcast projectile updates to all clients
-        if (gameState.projectiles.length > 0) {
-            for (const projectile of gameState.projectiles) {
-                broadcastToAll({
+        // Broadcast projectile updates to players in this level only
+        if (levelState.projectiles.length > 0) {
+            for (const projectile of levelState.projectiles) {
+                broadcastToLevel(levelName, {
                     type: 'projectileUpdate',
                     id: projectile.id,
                     x: projectile.x,
@@ -1551,29 +1828,400 @@ if (httpsWss) {
     });
 }
 
-// Simple server-authoritative enemy AI + spawn tick
+// Level-based game loop - processes each level separately
 let lastEnemyTick = Date.now();
 const gameLoopInterval = setInterval(() => {
     const now = Date.now();
     const dt = Math.min(0.016, (now - lastEnemyTick) / 1000);
     lastEnemyTick = now;
 
-    // Handle respawns
-    for (const sp of gameState.spawners) {
-        if (!sp.currentEnemyId && now >= sp.respawnAt) {
-            // Only spawn enemies if there are players connected
-            const totalClients = httpWss.clients.size + (httpsWss ? httpsWss.clients.size : 0);
-            if (totalClients > 0) {
+    // Process each level separately
+    for (const [levelName, levelState] of levelGameStates) {
+        // Only process levels that have players
+        const playersInLevel = getPlayersInLevel(levelName);
+        if (playersInLevel.length === 0) continue;
+
+        // Handle enemy AI for this level
+        for (let i = levelState.enemies.length - 1; i >= 0; i--) {
+            const enemy = levelState.enemies[i];
+            if (enemy.dead) {
+                levelState.enemies.splice(i, 1);
+                continue;
+            }
+
+            // Find nearest player in this level
+            let nearest = null;
+            let nearestDistance = Infinity;
+            for (const player of playersInLevel) {
+                const dx = player.x - enemy.x;
+                const dy = player.y - enemy.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance < nearestDistance) {
+                    nearest = player;
+                    nearestDistance = distance;
+                }
+            }
+
+            const inRange = nearest && nearestDistance < (enemy.visibilityRange || 400);
+            
+            // Enemy movement AI
+            const targetX = inRange ? (nearest.x || enemy.homeX || enemy.x) : (enemy.homeX || enemy.x);
+            const speedBase = 50;
+            const speed = speedBase + (enemy.level || 1) * 6;
+            
+            if (enemy.x < targetX) {
+                enemy.x += speed * dt;
+            } else if (enemy.x > targetX) {
+                enemy.x -= speed * dt;
+            }
+
+            // Apply gravity and floor collision
+            if (typeof enemy.vy !== 'number') enemy.vy = 0;
+            enemy.vy += 1200 * dt; // gravity
+            enemy.y = (enemy.y || 0) + enemy.vy * dt;
+            
+            // Floor collision using level data
+            const floors = levelState.levelData ? levelState.levelData.floors || [] : [];
+            let onFloor = false;
+            for (const floor of floors) {
+                if (enemy.x + 48 > floor.x && 
+                    enemy.x < floor.x + floor.width && 
+                    enemy.y + 64 > floor.y && 
+                    enemy.y < floor.y + floor.height) {
+                    // Check if landing on top of floor
+                    if (enemy.vy > 0 && enemy.y < floor.y) {
+                        enemy.y = floor.y - 64;
+                        enemy.vy = 0;
+                        onFloor = true;
+                        break;
+                    }
+                }
+            }
+            
+            // Fallback to old ground collision if no floor collision
+            if (!onFloor) {
+                const groundY = typeof enemy.homeY === 'number' ? enemy.homeY : (GROUND_Y - 64);
+                if (enemy.y > groundY) { 
+                    enemy.y = groundY; 
+                    enemy.vy = 0; 
+                }
+            }
+
+            // Attack if close enough and cooldown elapsed
+            enemy.attackCooldown = Math.max(0, (enemy.attackCooldown || 0) - dt);
+            if (inRange && enemy.attackCooldown === 0) {
+                // Perform attack (e.g., spawn projectile)
+                const direction = (nearest.x || 0) > (enemy.x || 0) ? 'right' : 'left';
+                const projectile = {
+                    id: `enemy-fireball-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                    type: 'fireball',
+                    x: enemy.x + (direction === 'right' ? 32 : -8),
+                    y: enemy.y + 16,
+                    vx: direction === 'right' ? 600 : -600, // Slightly slower than player fireballs
+                    vy: 0,
+                    damage: 15 + (enemy.level || 1) * 3, // Higher damage than player fireballs
+                    playerId: enemy.id, // Use enemy ID to identify enemy projectiles
+                    isEnemyProjectile: true,
+                    createdAt: Date.now(),
+                    lifeTime: 4000 // 4 seconds max life
+                };
+                levelState.projectiles = levelState.projectiles || [];
+                levelState.projectiles.push(projectile);
+                broadcastToLevel(levelName, { type: 'projectileCreated', ...projectile });
+                enemy.attackCooldown = 2; // 2 second cooldown
+            }
+
+            // Broadcast enemy position updates to players in this level
+            broadcastToLevel(levelName, {
+                type: 'enemyUpdate',
+                id: enemy.id,
+                x: enemy.x,
+                y: enemy.y,
+                vx: enemy.vx || 0,
+                health: enemy.health,
+                maxHealth: enemy.maxHealth,
+                level: enemy.level,
+                colors: enemy.colors
+            });
+        }
+
+        // Handle projectile collision detection for this level
+        if (levelState.projectiles && levelState.projectiles.length > 0) {
+            const projectilesToRemove = [];
+            
+            for (let i = 0; i < levelState.projectiles.length; i++) {
+                const projectile = levelState.projectiles[i];
+                
+                // Check if projectile has expired
+                if (now - projectile.createdAt > projectile.lifeTime) {
+                    projectilesToRemove.push(i);
+                    continue;
+                }
+                
+                // Check collision with enemies (only for player projectiles)
+                if (!projectile.isEnemyProjectile) {
+                    for (const enemy of levelState.enemies) {
+                        if (enemy.dead) continue;
+                        
+                        const dx = projectile.x - enemy.x;
+                        const dy = projectile.y - enemy.y;
+                        const distance = Math.hypot(dx, dy);
+                        
+                        if (distance < 32) { // Enemy hit radius
+                            // Deal damage
+                            enemy.health -= projectile.damage;
+                            
+                            if (enemy.health <= 0) {
+                                enemy.dead = true;
+                                // Remove dead enemy from array
+                                const enemyIndex = levelState.enemies.findIndex(e => e.id === enemy.id);
+                                if (enemyIndex !== -1) {
+                                    levelState.enemies.splice(enemyIndex, 1);
+                                }
+                                
+                                // Spawn loot when enemy dies
+                                const enemyType = enemy.type || 'basic';
+                                const lootItems = generateLoot(enemyType, enemy.level || 1);
+                                
+                                for (const lootItem of lootItems) {
+                                    const dropX = enemy.x + (Math.random() - 0.5) * 100;
+                                    const dropY = enemy.y + 10;
+                                    const drop = {
+                                        id: `enemy-loot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                                        x: dropX,
+                                        y: dropY,
+                                        item: lootItem,
+                                        vx: (Math.random() - 0.5) * 140,
+                                        vy: -Math.random() * 120 - 260,
+                                        pickRadius: 40,
+                                        grounded: false,
+                                        noPickupUntil: Date.now() + 1000
+                                    };
+                                    levelState.worldDrops.push(drop);
+                                    broadcastToLevel(levelName, { type: 'dropItem', ...drop });
+                                }
+                                
+                                // Schedule respawn
+                                const spawner = levelState.spawners.find(s => s.id === enemy.spawnerId);
+                                if (spawner) {
+                                    spawner.currentEnemyId = null;
+                                    spawner.respawnAt = Date.now() + 8000; // 8 seconds respawn
+                                }
+                                
+                                broadcastToLevel(levelName, { type: 'enemyDeath', id: enemy.id });
+                            } else {
+                                broadcastToLevel(levelName, { 
+                                    type: 'enemyUpdate', 
+                                    id: enemy.id, 
+                                    health: enemy.health,
+                                    colors: enemy.colors
+                                });
+                            }
+                            
+                            // Destroy projectile on hit
+                            projectilesToRemove.push(i);
+                            break;
+                        }
+                    }
+                }
+                
+                // Check collision with players (for enemy projectiles)
+                if (projectile.isEnemyProjectile) {
+                    for (const player of playersInLevel) {
+                        if (player.isDead) continue;
+                        
+                        const dx = projectile.x - (player.x + 24); // Player center
+                        const dy = projectile.y - (player.y + 32); // Player center
+                        const distance = Math.hypot(dx, dy);
+                        
+                        if (distance < 32) { // Player hit radius
+                            // Deal damage to player
+                            player.health = Math.max(0, (player.health || player.maxHealth || 100) - projectile.damage);
+                            
+                            // Check if player died from this attack
+                            if (player.health <= 0) {
+                                player.isDead = true;
+                                player.health = 0;
+                                
+                                // Drop the most valuable item from inventory/equipment
+                                const droppedItem = dropMostValuableItem(player);
+                                if (droppedItem) {
+                                    // Create world drop at player's position
+                                    const drop = {
+                                        id: `enemy-death-drop-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                                        x: player.x + 24, // Center of player
+                                        y: player.y + 32,
+                                        item: droppedItem,
+                                        vx: (Math.random() - 0.5) * 100,
+                                        vy: -Math.random() * 100 - 200,
+                                        pickRadius: 40,
+                                        grounded: false,
+                                        noPickupUntil: Date.now() + 3000 // 3 seconds delay
+                                    };
+                                    levelState.worldDrops.push(drop);
+                                    broadcastToLevel(levelName, { type: 'dropItem', ...drop });
+                                    console.log(`Player ${player.name} dropped ${droppedItem.name} due to enemy spell`);
+                                }
+                                
+                                // Generate and broadcast death message
+                                const deathMessage = generateDeathMessage(player.name, 'Enemy Spellcaster', 'Fireball');
+                                broadcastToLevel(levelName, {
+                                    type: 'chatMessage',
+                                    message: deathMessage,
+                                    color: '#ffa500' // Light orange color
+                                });
+                                
+                                // Broadcast death to players in this level
+                                broadcastToLevel(levelName, {
+                                    type: 'playerDeath',
+                                    playerId: player.id,
+                                    playerName: player.name
+                                });
+                            }
+                            
+                            // Notify clients in this level
+                            broadcastToLevel(levelName, { 
+                                type: 'playerHit', 
+                                id: player.id, 
+                                health: player.health, 
+                                byEnemyId: projectile.playerId, 
+                                damage: projectile.damage 
+                            });
+                            broadcastToLevel(levelName, { 
+                                type: 'playerUpdate', 
+                                id: player.id, 
+                                x: player.x, 
+                                y: player.y, 
+                                health: player.health, 
+                                maxHealth: player.maxHealth, 
+                                pyreals: player.pyreals 
+                            });
+                            
+                            // Destroy projectile on hit
+                            projectilesToRemove.push(i);
+                            console.log(`Enemy fireball hit player ${player.name} for ${projectile.damage} damage`);
+                            break;
+                        }
+                    }
+                }
+                
+                // Check collision with environment (floor tiles)
+                const floors = levelState.levelData ? levelState.levelData.floors || [] : [];
+                let hitFloor = false;
+                for (const floor of floors) {
+                    if (projectile.x > floor.x && 
+                        projectile.x < floor.x + floor.width && 
+                        projectile.y > floor.y && 
+                        projectile.y < floor.y + floor.height) {
+                        projectilesToRemove.push(i);
+                        hitFloor = true;
+                        break;
+                    }
+                }
+                
+                // Fallback to old ground collision if no floor collision
+                if (!hitFloor && projectile.y > GROUND_Y) {
+                    projectilesToRemove.push(i);
+                }
+            }
+            
+            // Remove destroyed projectiles (in reverse order to maintain indices)
+            for (let i = projectilesToRemove.length - 1; i >= 0; i--) {
+                const index = projectilesToRemove[i];
+                const destroyedProjectile = levelState.projectiles[index];
+                levelState.projectiles.splice(index, 1);
+                
+                // Broadcast projectile destruction to players in this level
+                broadcastToLevel(levelName, {
+                    type: 'projectileDestroyed',
+                    id: destroyedProjectile.id
+                });
+            }
+        }
+
+        // Handle respawns for this level
+        for (const sp of levelState.spawners) {
+            if (!sp.currentEnemyId && now >= sp.respawnAt) {
+                // Calculate proper Y position using floor collision
+                // Find the floor that the spawner X position is over
+                // Spawners should be placed ON TOP of floors, not inside them
+                let enemyY = null;
+                const floors = levelState.levelData ? levelState.levelData.floors || [] : [];
+                
+                // First, find any floor that horizontally contains the spawner X position
+                // Spawner X is the spawn position, enemy is 48 pixels wide
+                for (const floor of floors) {
+                    // Check if spawner X position (center of enemy) is over this floor
+                    // Enemy center will be at sp.x + 24 (half of 48 width)
+                    const enemyCenterX = sp.x + 24;
+                    if (enemyCenterX >= floor.x && enemyCenterX < floor.x + floor.width) {
+                        // Place enemy on top of this floor (floor top minus enemy height of 64)
+                        enemyY = floor.y - 64;
+                        break;
+                    }
+                }
+                
+                // If no floor found directly, try finding the nearest floor below the spawner
+                if (enemyY === null) {
+                    let bestFloor = null;
+                    let bestScore = Infinity; // Lower is better (closest and below)
+                    
+                    for (const floor of floors) {
+                        // Check if spawner X position overlaps with floor horizontally
+                        const spawnerLeft = sp.x;
+                        const spawnerRight = sp.x + 48;
+                        const floorLeft = floor.x;
+                        const floorRight = floor.x + floor.width;
+                        
+                        // Check if there's horizontal overlap
+                        if (!(spawnerRight < floorLeft || spawnerLeft > floorRight)) {
+                            // There's horizontal overlap - check if floor is below spawner
+                            // We want the floor that's closest below the spawner
+                            if (floor.y >= sp.y) {
+                                const verticalDistance = floor.y - sp.y;
+                                // Prefer floors that are closer
+                                if (verticalDistance < bestScore) {
+                                    bestScore = verticalDistance;
+                                    bestFloor = floor;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (bestFloor) {
+                        enemyY = bestFloor.y - 64;
+                    } else {
+                        // Fallback: find any floor that the spawner is near (within reasonable distance)
+                        for (const floor of floors) {
+                            if (sp.x + 48 > floor.x && sp.x < floor.x + floor.width) {
+                                // Use this floor even if spawner Y doesn't match
+                                enemyY = floor.y - 64;
+                                break;
+                            }
+                        }
+                        
+                        // Final fallback to old ground collision
+                        if (enemyY === null) {
+                            enemyY = GROUND_Y - 64;
+                        }
+                    }
+                }
+
+                // Use spawner's minLevel and maxLevel for enemy generation
+                const minLevel = sp.minLevel || 1;
+                const maxLevel = sp.maxLevel || 3;
+                const enemyLevel = minLevel + Math.floor(Math.random() * (maxLevel - minLevel + 1));
+                
                 const enemy = {
-                    id: gameState.nextEnemyId++,
+                    id: levelState.nextEnemyId++,
                     x: sp.x,
-                    y: sp.y,
-                    level: 1 + Math.floor(Math.random()*3),
-                    health: 20 + (1 + Math.floor(Math.random()*3)) * 12,
-                    maxHealth: 20 + (1 + Math.floor(Math.random()*3)) * 12,
+                    y: enemyY,
+                    level: enemyLevel,
+                    health: 20 + enemyLevel * 12,
+                    maxHealth: 20 + enemyLevel * 12,
                     spawnerId: sp.id,
                     homeX: sp.x,
-                    homeY: sp.y,
+                    homeY: enemyY,
                     visibilityRange: sp.visibilityRange,
                     type: sp.type || 'basic',
                     dead: false,
@@ -1581,9 +2229,11 @@ const gameLoopInterval = setInterval(() => {
                     name: getRandomEnemyName(),
                     colors: generateNPCColors()
                 };
-                gameState.enemies.push(enemy);
+                levelState.enemies.push(enemy);
                 sp.currentEnemyId = enemy.id;
-                broadcastToAll({ 
+                
+                // Broadcast to players in this level only
+                broadcastToLevel(levelName, { 
                     type: 'enemySpawned', 
                     id: enemy.id,
                     x: enemy.x,
@@ -1598,36 +2248,52 @@ const gameLoopInterval = setInterval(() => {
             }
         }
     }
+}, 100); // 10 FPS for enemy AI
 
-    // Apply physics to vendor (gravity and ground collision)
-    if (gameState.vendor) {
-        if (typeof gameState.vendor.vy !== 'number') gameState.vendor.vy = 0;
-        gameState.vendor.vy += 1200 * dt; // gravity
-        gameState.vendor.y += gameState.vendor.vy * dt;
+// Apply physics to vendor (gravity and floor collision) - this should be per-level too
+const vendorPhysicsInterval = setInterval(() => {
+    for (const [levelName, levelState] of levelGameStates) {
+        const playersInLevel = getPlayersInLevel(levelName);
+        if (playersInLevel.length === 0) continue;
         
-        // Ground collision at GROUND_Y (ground level)
-        const groundY = GROUND_Y;
-        if (gameState.vendor.y > groundY - gameState.vendor.h) {
-            gameState.vendor.y = groundY - gameState.vendor.h;
-            gameState.vendor.vy = 0;
+        if (levelState.vendor) {
+            if (typeof levelState.vendor.vy !== 'number') levelState.vendor.vy = 0;
+            levelState.vendor.vy += 1200 * 0.016; // gravity
+            levelState.vendor.y += levelState.vendor.vy * 0.016;
+        
+            // Floor collision using level data
+            const floors = levelState.levelData ? levelState.levelData.floors || [] : [];
+            let onFloor = false;
+            for (const floor of floors) {
+                if (levelState.vendor.x + levelState.vendor.w > floor.x && 
+                    levelState.vendor.x < floor.x + floor.width && 
+                    levelState.vendor.y + levelState.vendor.h > floor.y && 
+                    levelState.vendor.y < floor.y + floor.height) {
+                    // Check if landing on top of floor
+                    if (levelState.vendor.vy > 0 && levelState.vendor.y < floor.y) {
+                        levelState.vendor.y = floor.y - levelState.vendor.h;
+                        levelState.vendor.vy = 0;
+                        onFloor = true;
+                        break;
+                    }
+                }
+            }
+            
+            // Fallback to old ground collision if no floor collision
+            if (!onFloor) {
+                const groundY = GROUND_Y;
+                if (levelState.vendor.y > groundY - levelState.vendor.h) {
+                    levelState.vendor.y = groundY - levelState.vendor.h;
+                    levelState.vendor.vy = 0;
+                }
+            }
         }
     }
+}, 16); // 60 FPS for vendor physics
 
-    if (!gameState.enemies.length) return;
-    const playersArr = Array.from(gameState.players.values());
-    if (!playersArr.length) return;
-
-    const speedBase = 120; // px/s
-    for (const enemy of gameState.enemies) {
-        // Determine nearest player
-        let nearest = playersArr[0];
-        let bestDist = Math.hypot((nearest?.x || 0) - (enemy.x || 0), (nearest?.y || 0) - (enemy.y || 0));
-        for (let i = 1; i < playersArr.length; i++) {
-            const p = playersArr[i];
-            const d = Math.hypot((p.x || 0) - (enemy.x || 0), (p.y || 0) - (enemy.y || 0));
-            if (d < bestDist) { bestDist = d; nearest = p; }
-        }
-        const inRange = bestDist <= (enemy.visibilityRange || 400);
+// Old enemy AI code removed - now using level-based enemy AI in gameLoopInterval
+        // OLD ENEMY AI CODE - DISABLED - Using level-based AI instead
+        /*
         const targetX = inRange ? (nearest.x || enemy.homeX || enemy.x) : (enemy.homeX || enemy.x);
         const speed = speedBase + (enemy.level || 1) * 6;
         const dir = Math.sign(targetX - (enemy.x || 0));
@@ -1637,12 +2303,40 @@ const gameLoopInterval = setInterval(() => {
         } else {
             enemy.vx = 0;
         }
-        // Apply simple gravity to settle to ground/homeY
-        const groundY = typeof enemy.homeY === 'number' ? enemy.homeY : (GROUND_Y - 64);
+        */
+        /*
+        // OLD ENEMY AI CODE COMPLETELY DISABLED - Using level-based AI instead
+        // Apply gravity and floor collision
         if (typeof enemy.vy !== 'number') enemy.vy = 0;
         enemy.vy += 1200 * dt; // gravity
-        enemy.y = (enemy.y || groundY) + enemy.vy * dt;
-        if (enemy.y > groundY) { enemy.y = groundY; enemy.vy = 0; }
+        enemy.y = (enemy.y || 0) + enemy.vy * dt;
+        
+        // Floor collision using level data
+        const floors = gameState.levelData ? gameState.levelData.floors || [] : [];
+        let onFloor = false;
+        for (const floor of floors) {
+            if (enemy.x + 48 > floor.x && 
+                enemy.x < floor.x + floor.width && 
+                enemy.y + 64 > floor.y && 
+                enemy.y < floor.y + floor.height) {
+                // Check if landing on top of floor
+                if (enemy.vy > 0 && enemy.y < floor.y) {
+                    enemy.y = floor.y - 64;
+                    enemy.vy = 0;
+                    onFloor = true;
+                    break;
+                }
+            }
+        }
+        
+        // Fallback to old ground collision if no floor collision
+        if (!onFloor) {
+            const groundY = typeof enemy.homeY === 'number' ? enemy.homeY : (GROUND_Y - 64);
+            if (enemy.y > groundY) { 
+                enemy.y = groundY; 
+                enemy.vy = 0; 
+            }
+        }
 
         // Attack if close enough and cooldown elapsed
         enemy.attackCooldown = Math.max(0, (enemy.attackCooldown || 0) - dt);
@@ -1752,206 +2446,11 @@ const gameLoopInterval = setInterval(() => {
         }
     }
 
-    // Handle projectile collision detection and cleanup (position updates handled by high-frequency loop)
-    if (gameState.projectiles && gameState.projectiles.length > 0) {
-        const now = Date.now();
-        const projectilesToRemove = [];
-        
-        for (let i = 0; i < gameState.projectiles.length; i++) {
-            const projectile = gameState.projectiles[i];
-            
-            // Check if projectile has expired
-            if (now - projectile.createdAt > projectile.lifeTime) {
-                projectilesToRemove.push(i);
-                continue;
-            }
-            
-            // Check collision with enemies (only for player projectiles)
-            if (!projectile.isEnemyProjectile) {
-                for (const enemy of gameState.enemies) {
-                    if (enemy.dead) continue;
-                    
-                    const dx = projectile.x - enemy.x;
-                    const dy = projectile.y - enemy.y;
-                    const distance = Math.hypot(dx, dy);
-                    
-                    if (distance < 32) { // Enemy hit radius
-                    // Deal damage
-                    enemy.health -= projectile.damage;
-                    
-                    if (enemy.health <= 0) {
-                        enemy.dead = true;
-                        // Remove dead enemy from array
-                        const enemyIndex = gameState.enemies.findIndex(e => e.id === enemy.id);
-                        if (enemyIndex !== -1) {
-                            gameState.enemies.splice(enemyIndex, 1);
-                        }
-                        
-                        // Spawn loot when enemy dies
-                        const enemyType = enemy.type || 'basic';
-                        const lootItems = generateLoot(enemyType, enemy.level || 1);
-                        
-                        for (const lootItem of lootItems) {
-                            const dropX = enemy.x + (Math.random() - 0.5) * 100;
-                            const dropY = enemy.y + 10;
-                            const drop = {
-                                id: `enemy-loot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                                x: dropX,
-                                y: dropY,
-                                item: lootItem,
-                                vx: (Math.random() - 0.5) * 140,
-                                vy: -Math.random() * 120 - 260,
-                                pickRadius: 40,
-                                grounded: false,
-                                noPickupUntil: Date.now() + 1000
-                            };
-                            gameState.worldDrops.push(drop);
-                            broadcastToAll({ type: 'dropItem', ...drop });
-                        }
-                        
-                        // Schedule respawn
-                        const spawner = gameState.spawners.find(s => s.id === enemy.spawnerId);
-                        if (spawner) {
-                            spawner.currentEnemyId = null;
-                            spawner.respawnAt = Date.now() + 8000; // 8 seconds respawn
-                        }
-                        
-                        broadcastToAll({ type: 'enemyDeath', id: enemy.id });
-                    } else {
-                        broadcastToAll({ 
-                            type: 'enemyUpdate', 
-                            id: enemy.id, 
-                            health: enemy.health,
-                            colors: enemy.colors
-                        });
-                    }
-                    
-                    // Destroy projectile on hit
-                    projectilesToRemove.push(i);
-                    break;
-                }
-            }
-            }
-            
-            // Check collision with players (for enemy projectiles)
-            if (projectile.isEnemyProjectile) {
-                for (const [playerId, player] of gameState.players) {
-                    if (player.isDead) continue;
-                    
-                    const dx = projectile.x - (player.x + 24); // Player center
-                    const dy = projectile.y - (player.y + 32); // Player center
-                    const distance = Math.hypot(dx, dy);
-                    
-                    if (distance < 32) { // Player hit radius
-                        // Deal damage to player
-                        player.health = Math.max(0, (player.health || player.maxHealth || 100) - projectile.damage);
-                        
-                        // Check if player died from this attack
-                        if (player.health <= 0) {
-                            player.isDead = true;
-                            player.health = 0;
-                            
-                            // Drop the most valuable item from inventory/equipment
-                            const droppedItem = dropMostValuableItem(player);
-                            if (droppedItem) {
-                                // Create world drop at player's position
-                                const drop = {
-                                    id: `enemy-death-drop-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                                    x: player.x + 24, // Center of player
-                                    y: player.y + 32,
-                                    item: droppedItem,
-                                    vx: (Math.random() - 0.5) * 100,
-                                    vy: -Math.random() * 100 - 200,
-                                    pickRadius: 40,
-                                    grounded: false,
-                                    noPickupUntil: Date.now() + 3000 // 3 seconds delay
-                                };
-                                gameState.worldDrops.push(drop);
-                                // Broadcast item drop to all players
-                                broadcastToAll({
-                                    type: 'dropItem',
-                                    ...drop
-                                });
-                                console.log(`Player ${player.name} dropped ${droppedItem.name} due to enemy spell`);
-                            }
-                            
-                            // Generate and broadcast death message
-                            const deathMessage = generateDeathMessage(player.name, 'Enemy Spellcaster', 'Fireball');
-                            broadcastToAll({
-                                type: 'chatMessage',
-                                message: deathMessage,
-                                color: '#ffa500' // Light orange color
-                            });
-                            
-                            // Broadcast death to all players
-                            broadcastToAll({
-                                type: 'playerDeath',
-                                playerId: player.id,
-                                playerName: player.name
-                            });
-                        }
-                        
-                        // Notify all clients
-                        broadcastToAll({ type: 'playerHit', id: player.id, health: player.health, byEnemyId: projectile.playerId, damage: projectile.damage });
-                        // Also broadcast playerUpdate for consistency
-                        broadcastToAll({ type: 'playerUpdate', id: player.id, x: player.x, y: player.y, health: player.health, maxHealth: player.maxHealth, pyreals: player.pyreals });
-                        
-                        // Destroy projectile on hit
-                        projectilesToRemove.push(i);
-                        console.log(`Enemy fireball hit player ${player.name} for ${projectile.damage} damage`);
-                        break;
-                    }
-                }
-            }
-            
-            // Check collision with environment (ground/platforms)
-            if (projectile.y > GROUND_Y) {
-                projectilesToRemove.push(i);
-            }
-        }
-        
-        // Remove destroyed projectiles (in reverse order to maintain indices)
-        for (let i = projectilesToRemove.length - 1; i >= 0; i--) {
-            const index = projectilesToRemove[i];
-            const destroyedProjectile = gameState.projectiles[index];
-            gameState.projectiles.splice(index, 1);
-            
-            // Broadcast projectile destruction
-            broadcastToAll({
-                type: 'projectileDestroyed',
-                id: destroyedProjectile.id
-            });
-        }
-    }
+    // Projectile collision detection is now handled in the level-based gameLoopInterval
 
-    // Broadcast consolidated updates (only when there are clients connected)
-    const totalClients = httpWss.clients.size + (httpsWss ? httpsWss.clients.size : 0);
-    if (totalClients > 0) {
-        for (const enemy of gameState.enemies) {
-            broadcastToAll({ 
-                type: 'enemyUpdate', 
-                id: enemy.id, 
-                x: enemy.x, 
-                y: enemy.y, 
-                vx: enemy.vx || 0, 
-                health: enemy.health, 
-                maxHealth: enemy.maxHealth, 
-                level: enemy.level,
-                colors: enemy.colors
-            });
-        }
-        
-        // Broadcast vendor position updates to all clients
-        if (gameState.vendor) {
-            broadcastToAll({ 
-                type: 'vendorUpdate', 
-                x: gameState.vendor.x, 
-                y: gameState.vendor.y,
-                colors: gameState.vendor.colors // Include colors to ensure they're preserved
-            });
-        }
-    }
-}, 16.67); // End of main game loop - 60 ticks per second
+    // Enemy and vendor updates are now handled in the level-based gameLoopInterval
+    */
+    // OLD ENEMY AI BLOCK COMPLETELY DISABLED - Using level-based AI in gameLoopInterval instead
 
 // Helper functions are now managed in their respective modules
 

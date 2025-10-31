@@ -118,6 +118,16 @@ class LevelLoader {
                     currentEnemyId: null, 
                     respawnAt: Date.now() + 10000 
                 }
+            ],
+            portals: [
+                {
+                    id: 'portal_1',
+                    x: 3550,
+                    y: 486,
+                    width: 64,
+                    height: 64,
+                    targetLevel: 'sample_level'
+                }
             ]
         };
     }
@@ -184,6 +194,18 @@ class LevelLoader {
                 minLevel: spawner.minLevel,
                 maxLevel: spawner.maxLevel,
                 respawnTime: spawner.respawnTime
+            }));
+        }
+        
+        // Apply portal data
+        if (levelData.portals && levelData.portals.length > 0) {
+            gameState.portals = levelData.portals.map(portal => ({
+                id: portal.id,
+                x: portal.x,
+                y: portal.y,
+                w: portal.width,
+                h: portal.height,
+                targetLevel: portal.targetLevel
             }));
         }
         

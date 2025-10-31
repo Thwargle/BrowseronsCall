@@ -379,7 +379,6 @@ window.initInventoryUI=function(){
     // But allow it when called from the network layer to fix UI initialization issues
     if (window.connectionStatus && window.connectionStatus.initialConnectionComplete && 
         window.bag && window.bag.some(item => item !== null)) {
-        console.log('Skipping initInventoryUI - already connected to server with inventory data');
         return;
     }
     
@@ -388,11 +387,14 @@ window.initInventoryUI=function(){
     
     const inv=document.getElementById('inventory'); 
     if (!inv) {
-        console.error('Inventory element not found');
+        console.error('[initInventoryUI] Inventory element not found');
         return;
     }
     
-    inv.innerHTML=''; 
+    // Clear existing slots if any
+    inv.innerHTML='';
+    
+    // Create inventory slots
     for(let i=0;i<window.BAG_SLOTS;i++){ 
         const d=document.createElement('div'); 
         d.className='slot'; 
@@ -410,17 +412,12 @@ window.initInventoryUI=function(){
         
         inv.appendChild(d);
     } 
-    
-    console.log('Inventory slots created:', inv.children.length);
-    console.log('Current bag contents:', window.bag);
-    
-    // Test items are now created on the server side for new players
-    // No need to add test items locally anymore
-    console.log('Inventory UI initialized - test items will be provided by server if needed');
 }
 
 window.initPaperDollUI=function(){ 
-    document.querySelectorAll('.pd-slot').forEach(el=>{ 
+    const equipmentSlots = document.querySelectorAll('.pd-slot');
+    
+    equipmentSlots.forEach(el=>{ 
         el.addEventListener('dragover',e=>{
             e.preventDefault(); 
             e.dataTransfer.dropEffect = 'move';
@@ -431,7 +428,7 @@ window.initPaperDollUI=function(){
             window.handleEquipDrop(id, el.dataset.slot); 
         }); 
         el.addEventListener('dblclick',()=>window.swapUnequip(el.dataset.slot)); 
-    }); 
+    });
 }
 
 // Add a flag to prevent rapid successive calls
@@ -439,10 +436,18 @@ window._lastRefreshTime = 0;
 window._refreshInProgress = false;
 
 window.refreshInventoryUI=function(){ 
+    // CRITICAL: Don't refresh inventory until player has connected and received playerData
+    if (!window.connectionStatus || !window.connectionStatus.connected) {
+        return;
+    }
+    
+    // Don't refresh if we haven't received playerData yet
+    if (!window.connectionStatus.initialConnectionComplete) {
+        return;
+    }
+    
     const now = Date.now();
     const timeSinceLastRefresh = now - window._lastRefreshTime;
-    
-
     
     // Prevent rapid successive calls (less than 100ms apart)
     if (timeSinceLastRefresh < 100) {
@@ -456,9 +461,8 @@ window.refreshInventoryUI=function(){
         return;
     }
     
-    // Prevent refresh if we're connected to server and have inventory data
-    // This prevents interference with server inventory data during initial setup
-    // But allow it to run when called from user actions (equipping, moving items, etc.)
+    // For server-connected clients, use displayInventoryItems instead of refreshInventoryUI
+    // This ensures consistency with server data
     if (window.connectionStatus && window.connectionStatus.initialConnectionComplete) {
         // Check if this is a user-initiated action by looking at the call stack
         const callStack = new Error().stack || '';
@@ -471,10 +475,11 @@ window.refreshInventoryUI=function(){
                            callStack.includes('handleDropToWorld');
         
         if (!isUserAction) {
-
+            // For non-user actions when connected, use displayInventoryItems
+            if (window.displayInventoryItems) {
+                window.displayInventoryItems();
+            }
             return;
-        } else {
-
         }
     }
     
@@ -973,6 +978,42 @@ window.initCanvasDragAndDropWhenReady = function() {
 
 // Function to display inventory items without triggering a full refresh
 window.displayInventoryItems=function() {
+    // CRITICAL: Only display inventory/equipment if we have a player and are connected
+    // Don't try to display before player has logged in
+    if (!window.connectionStatus || !window.connectionStatus.connected) {
+        return;
+    }
+    
+    // If we don't have player data yet, don't display (this prevents early initialization)
+    if (!window.player || !window.player.id) {
+        // Only skip if we haven't received playerData yet - allow display after login
+        if (!window.connectionStatus.initialConnectionComplete && (!window.bag || window.bag.length === 0 || !window.equip)) {
+            return;
+        }
+    }
+    
+    // CRITICAL: Ensure UI is initialized BEFORE checking if ready
+    // This fixes the issue where equipment doesn't show on login
+    if (window.initInventoryUI && typeof window.initInventoryUI === 'function') {
+        const inventory = document.getElementById('inventory');
+        if (!inventory || inventory.children.length === 0) {
+            window.initInventoryUI();
+        }
+    }
+    
+    if (window.initPaperDollUI && typeof window.initPaperDollUI === 'function') {
+        let equipmentSlots = document.querySelectorAll('.pd-slot');
+        if (equipmentSlots.length === 0) {
+            equipmentSlots = document.querySelectorAll('.equipSlot');
+        }
+        if (equipmentSlots.length === 0) {
+            equipmentSlots = document.querySelectorAll('[data-slot]');
+        }
+        if (equipmentSlots.length === 0) {
+            window.initPaperDollUI();
+        }
+    }
+    
     // Comprehensive check to ensure everything is ready
     const isFullyReady = () => {
         // Check if DOM is ready
@@ -1013,13 +1054,11 @@ window.displayInventoryItems=function() {
     
     // If not ready, schedule retry
     if (!isFullyReady()) {
-        console.log(`[${Date.now()}] Inventory not fully ready, scheduling retry`);
         setTimeout(() => window.displayInventoryItems(), 100);
         return;
     }
     
     const inv = document.getElementById('inventory');
-    console.log(`[${Date.now()}] Displaying inventory items in ${inv.children.length} slots, bag has ${window.bag.length} items`);
     
     // Display inventory items
     inv.childNodes.forEach((el, i) => {
@@ -1072,6 +1111,11 @@ window.displayInventoryItems=function() {
         window.equip = {head:null,neck:null,shoulders:null,chest:null,waist:null,legs:null,feet:null,wrists:null,hands:null,mainhand:null,offhand:null,trinket:null};
     }
     
+    // Log equipment state for debugging
+    const equippedItems = Object.entries(window.equip).filter(([slot, item]) => item !== null);
+    if (equippedItems.length > 0) {
+    }
+    
     equipmentSlots.forEach(el => {
         const s = el.dataset.slot;
         
@@ -1082,49 +1126,58 @@ window.displayInventoryItems=function() {
         
         const equippedItem = window.equip[s];
         
+        // Clear slot first to ensure clean state
+        el.innerHTML = '';
+        
         if (equippedItem && typeof equippedItem === 'object' && equippedItem.id) {
             try {
+                // Ensure getItemIconDataURLForItem is available
+                if (typeof window.getItemIconDataURLForItem !== 'function') {
+                    console.error(`[${Date.now()}] getItemIconDataURLForItem function not available`);
+                    return;
+                }
+                
                 const iconSrc = window.getItemIconDataURLForItem(equippedItem);
                 
                 if (!iconSrc) {
-                    console.error(`[${Date.now()}] Failed to generate icon for item:`, equippedItem);
+                    console.error(`[${Date.now()}] Failed to generate icon for item in slot ${s}:`, equippedItem);
                     return;
                 }
                 
                 const html = `<img class="itemIcon" src="${iconSrc}" data-id="${equippedItem.id}" draggable="true">`;
                 el.innerHTML = html;
                 
+                // Add event listeners immediately after setting innerHTML
+                const img = el.querySelector('.itemIcon');
+                if (img && !img.dataset.eventHandlersAdded) {
+                    img.addEventListener('dragstart', e => {
+                        e.dataTransfer.setData('text', img.dataset.id);
+                        e.dataTransfer.effectAllowed = 'move';
+                    });
+                    img.addEventListener('mouseenter', e => {
+                        window.showTooltipForItem(equippedItem, e);
+                    });
+                    img.addEventListener('mouseleave', window.hideTooltip);
+                    img.addEventListener('dblclick', () => window.swapUnequip(s));
+                    img.addEventListener('contextmenu', (e) => {
+                        e.preventDefault();
+                        if (confirm('Drop ' + equippedItem.name + ' to the world?')) {
+                            window.dropEquippedItem(s);
+                        }
+                    });
+                    img.dataset.eventHandlersAdded = 'true';
+                }
+                
             } catch (error) {
                 console.error(`[${Date.now()}] Error generating icon for equipment slot ${s}:`, error);
                 el.innerHTML = '';
             }
         } else {
+            // Ensure slot is cleared if no item
             el.innerHTML = '';
-        }
-        
-        // Add event listeners to equipped items
-        const img = el.querySelector('.itemIcon');
-        if (img && equippedItem && !img.dataset.eventHandlersAdded) {
-            img.addEventListener('dragstart', e => {
-                e.dataTransfer.setData('text', img.dataset.id);
-                e.dataTransfer.effectAllowed = 'move';
-            });
-            img.addEventListener('mouseenter', e => {
-                window.showTooltipForItem(equippedItem, e);
-            });
-            img.addEventListener('mouseleave', window.hideTooltip);
-            img.addEventListener('dblclick', () => window.swapUnequip(s));
-            img.addEventListener('contextmenu', (e) => {
-                e.preventDefault();
-                if (confirm('Drop ' + equippedItem.name + ' to the world?')) {
-                    window.dropEquippedItem(s);
-                }
-            });
-            img.dataset.eventHandlersAdded = 'true';
         }
     });
     
-    console.log(`[${Date.now()}] Inventory display completed successfully`);
 };
 
 // Note: syncInventoryWithServer function removed - we're now server-authoritative

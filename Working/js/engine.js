@@ -205,17 +205,7 @@ function initializeEngine() {
     // Initialize projectiles array for network-synchronized projectiles
     window.projectiles = [];
 
-    // Initialize vendor with a placeholder - will be overwritten by server data when connected
-    // This ensures server-authoritative vendor appearance
-    window.vendor = {
-        x: 200,
-        y: 486,
-        w: 48,
-        h: 64,
-        anim: {timer: 0, index: 0},
-        // Don't set colors here - they should come from the server
-        colors: null
-    };
+    // Vendor will be initialized from gameState (either offline sample data or server data)
 
     // Initialize WebSocket functions if not already set
     if (!window.wsSend) {
@@ -311,15 +301,7 @@ function initializeEngine() {
         console.log('Using existing worldDrops:', window.worldDrops.length, 'items');
     }
 
-    // Initialize platforms if not already set
-    if (!window.platforms) {
-        console.log('Creating default platforms');
-        window.platforms = [
-            {x: 0, y: 550, w: 3600, h: 50}
-        ];
-    } else {
-        console.log('Using existing platforms:', window.platforms);
-    }
+    // Platform system removed - using floor tiles from level JSON instead
 
     // Initialize camera position
     if (!window.cameraX) {
@@ -327,6 +309,54 @@ function initializeEngine() {
         window.cameraX = 0;
     } else {
         console.log('Using existing cameraX:', window.cameraX);
+    }
+
+    // Initialize basic gameState for offline mode if not connected to server
+    if (!window.gameState) {
+        console.log('Initializing offline gameState with sample level data');
+        
+        // Sample level data (from sample_level.json)
+        const sampleLevelData = {
+            floors: [
+                { x: 0, y: 550, width: 1200, height: 50, material: 'dirt' },
+                { x: 1200, y: 550, width: 800, height: 50, material: 'grass' },
+                { x: 2000, y: 550, width: 600, height: 50, material: 'stone' },
+                { x: 2600, y: 550, width: 1000, height: 50, material: 'sand' }
+            ],
+            vendors: [
+                { id: 'vendor_1', name: 'Merchant', x: 600, y: 486, w: 48, h: 64, colors: null }
+            ],
+            spawners: [
+                { id: 'sp_1', x: 1200, y: 486, type: 'basic', respawnTime: 5000, visibilityRange: 400, minLevel: 1, maxLevel: 3, currentEnemyId: null, respawnAt: 0 },
+                { id: 'sp_2', x: 1800, y: 486, type: 'elite', respawnTime: 8000, visibilityRange: 400, minLevel: 2, maxLevel: 4, currentEnemyId: null, respawnAt: 0 },
+                { id: 'sp_3', x: 2400, y: 486, type: 'spellcaster', respawnTime: 10000, visibilityRange: 500, minLevel: 3, maxLevel: 5, currentEnemyId: null, respawnAt: 0 },
+                { id: 'sp_4', x: 3000, y: 486, type: 'boss', respawnTime: 15000, visibilityRange: 600, minLevel: 4, maxLevel: 6, currentEnemyId: null, respawnAt: 0 }
+            ],
+            portals: [
+                { id: 'portal_1', x: 3473, y: 412, w: 64, h: 64, targetLevel: 'watertest' }
+            ]
+        };
+        
+        window.gameState = {
+            players: [],
+            enemies: [],
+            worldDrops: [],
+            floors: sampleLevelData.floors,
+            vendor: sampleLevelData.vendors[0], // Set the vendor
+            spawners: sampleLevelData.spawners,
+            portals: sampleLevelData.portals
+        };
+        
+        // Also set global references for compatibility
+        window.vendor = window.gameState.vendor;
+        window.spawners = window.gameState.spawners;
+        window.portals = window.gameState.portals;
+        
+        console.log('Offline gameState initialized with sample level data:');
+        console.log('- Floors:', window.gameState.floors.length);
+        console.log('- Vendor:', window.gameState.vendor ? 'Yes' : 'No');
+        console.log('- Spawners:', window.gameState.spawners.length);
+        console.log('- Portals:', window.gameState.portals.length);
     }
 
     // Connection screen management
@@ -499,22 +529,14 @@ function initializeEngine() {
     // Init UI after DOM is loaded
     window.addEventListener('DOMContentLoaded', function() {
         try{ 
-            // Only initialize inventory UI if we're not connected to server
-            // This prevents interference with server inventory data
-            if (!window.connectionStatus || !window.connectionStatus.initialConnectionComplete) {
-                window.initInventoryUI(); 
-            } else {
-                console.log('Skipping initInventoryUI - already connected to server with inventory data');
-            }
+            // CRITICAL: Do NOT initialize inventory/equipment UI slots yet
+            // Wait until after player logs in and we receive playerData
+            // This ensures we know which player's inventory to load
+            console.log('DOMContentLoaded - Skipping inventory/equipment initialization until after login');
+            console.log('Inventory and equipment will be initialized when playerData is received after login');
             
-            window.initPaperDollUI(); 
-            
-            // Only refresh inventory UI if we're not connected to server
-            if (!window.connectionStatus || !window.connectionStatus.initialConnectionComplete) {
-                window.refreshInventoryUI(); 
-            } else {
-                console.log('Skipping refreshInventoryUI - already connected to server with inventory data');
-            }
+            // DO NOT call initInventoryUI or initPaperDollUI here
+            // DO NOT call refreshInventoryUI here - wait until after player connects and receives playerData
         }catch(e){ 
             window.log('UI init error: '+e.message); 
         } 
@@ -679,6 +701,35 @@ function initializeEngine() {
     function advance(dt){ 
         if (window.player) {
             window.player.update(dt);
+            
+            // Check portal collisions
+            if (window.gameState && window.gameState.portals) {
+                for (const portal of window.gameState.portals) {
+                    // Use w/h or width/height properties
+                    const portalW = portal.w || portal.width || 64;
+                    const portalH = portal.h || portal.height || 64;
+                    
+                    if (window.player.x < portal.x + portalW &&
+                        window.player.x + window.player.w > portal.x &&
+                        window.player.y < portal.y + portalH &&
+                        window.player.y + window.player.h > portal.y) {
+                        
+                        // Player is touching portal, trigger level change (with cooldown to prevent spam)
+                        if (window.wsSend && !window.player.portalCooldown) {
+                            window.player.portalCooldown = 2000; // 2 second cooldown
+                            window.wsSend({
+                                type: 'portalEnter',
+                                targetLevel: portal.targetLevel
+                            });
+                        }
+                    }
+                }
+            }
+            
+            // Update portal cooldown
+            if (window.player.portalCooldown) {
+                window.player.portalCooldown = Math.max(0, window.player.portalCooldown - dt * 1000);
+            }
         } 
         // When online, enemy AI is server-authoritative; do not run local AI
         // Only update local enemies when offline
@@ -722,28 +773,30 @@ function initializeEngine() {
                 d.vy += (window.GRAV || 1500) * dt;
                 d.y += d.vy * dt;
                 
-                // Ground collision
-                if (d.y >= (window.GROUND_Y || 550) - 16) {
+                // Floor collision using level data
+                const floors = window.gameState && window.gameState.floors ? window.gameState.floors : [];
+                let onFloor = false;
+                for (const floor of floors) {
+                    if (d.x > floor.x && 
+                        d.x < floor.x + floor.width && 
+                        d.y > floor.y - 16 && 
+                        d.y < floor.y + floor.height) {
+                        d.y = floor.y - 16;
+                        d.vy = 0;
+                        d.grounded = true;
+                        onFloor = true;
+                        break;
+                    }
+                }
+                
+                // Fallback to old ground collision if no floor collision
+                if (!onFloor && d.y >= (window.GROUND_Y || 550) - 16) {
                     d.y = (window.GROUND_Y || 550) - 16;
                     d.vy = 0;
                     d.grounded = true;
                 }
                 
-                // Platform collision detection
-                if (Array.isArray(window.platforms)) {
-                    for (const platform of window.platforms) {
-                        // Check if drop is above the platform and within its horizontal bounds
-                        if (d.y + 16 >= platform.y && d.y < platform.y + platform.h &&
-                            d.x + 16 > platform.x && d.x < platform.x + platform.w) {
-                            
-                            // Land on the platform
-                            d.y = platform.y - 16;
-                            d.vy = 0;
-                            d.grounded = true;
-                            break;
-                        }
-                    }
-                }
+                // Old platform collision removed - only floor tiles from level JSON are used
             }
             
             // Apply horizontal velocity
@@ -927,7 +980,19 @@ function initializeEngine() {
     }
 
     function drawCharacter(ctx,anim,X,Y,W,H,dt,flip,isMoving,isAir,opts={}){ 
-        const frame = window.advanceAnim(anim, dt, isAir, isMoving); 
+        // Ensure anim object has required properties
+        if (!anim || typeof anim !== 'object') {
+            console.warn('Invalid anim object passed to drawCharacter:', anim);
+            anim = {timer: 0, index: 0};
+        }
+        if (typeof anim.timer === 'undefined') {
+            anim.timer = 0;
+        }
+        if (typeof anim.index === 'undefined') {
+            anim.index = 0;
+        }
+        
+        const frame = window.advanceAnim ? window.advanceAnim(anim, dt, isAir, isMoving) : 0; 
         ctx.save(); 
         if(flip){ 
             ctx.translate(X+W,Y); 
@@ -1030,20 +1095,63 @@ function initializeEngine() {
         drawParallax();
         
         // Save context state before applying camera transform
-        currentCtx.save(); 
+        currentCtx.save();
         
         // Apply camera transform - player is centered on screen
         const cameraX = (typeof window.cameraX !== 'undefined') ? window.cameraX : 0;
-        currentCtx.translate(-cameraX, 0); 
+        currentCtx.translate(-cameraX, 0);
         
-        if (Array.isArray(window.platforms)) {
-            for(const p of window.platforms){ 
-                currentCtx.fillStyle='#394b59'; 
-                currentCtx.fillRect(p.x,p.y,p.w,p.h); 
-                currentCtx.strokeStyle='#2b3b43'; 
-                currentCtx.strokeRect(p.x,p.y,p.w,p.h); 
-            }
+        // Debug: Log camera position
+        if (window.debugCamera) {
+            console.log('Camera X:', cameraX, 'Player X:', window.player?.x);
         }
+        
+        // Draw floors from level data (AFTER camera transform - floors move with world)
+        if (window.gameState && window.gameState.floors && Array.isArray(window.gameState.floors)) {
+            // Define material colors (matching level editor)
+            const materials = {
+                dirt: { color: '#8B4513', pattern: 'dirt' },
+                grass: { color: '#228B22', pattern: 'grass' },
+                stone: { color: '#696969', pattern: 'stone' },
+                rock: { color: '#2F4F4F', pattern: 'rock' }, // Dark gray for rock
+                sand: { color: '#F4A460', pattern: 'sand' },
+                water: { color: '#4169E1', pattern: 'water' }
+            };
+            
+            for (const floor of window.gameState.floors) {
+                if (floor && floor.material && materials[floor.material]) {
+                    const material = materials[floor.material];
+                    currentCtx.fillStyle = material.color;
+                    currentCtx.fillRect(floor.x, floor.y, floor.width, floor.height);
+                    
+                    // Add texture pattern for better visual distinction
+                    currentCtx.strokeStyle = 'rgba(0,0,0,0.2)';
+                    currentCtx.lineWidth = 1;
+                    currentCtx.strokeRect(floor.x, floor.y, floor.width, floor.height);
+                } else {
+                    console.log('Skipped floor:', floor);
+                }
+            }
+        } else {
+            console.log('No floors to render. gameState:', !!window.gameState, 'floors:', window.gameState?.floors);
+            
+            // Fallback: Draw a basic ground floor if no gameState floors are available
+            currentCtx.fillStyle = '#228B22'; // Grass green
+            currentCtx.fillRect(0, 486, WORLD_W, 64);
+            currentCtx.strokeStyle = 'rgba(0,0,0,0.2)';
+            currentCtx.lineWidth = 1;
+            currentCtx.strokeRect(0, 486, WORLD_W, 64);
+            console.log('Drew fallback ground floor at y=486');
+        }
+        
+        // Debug: Draw a test floor to verify rendering is working (temporarily disabled)
+        // currentCtx.fillStyle = '#ff0000'; // Bright red for visibility
+        // currentCtx.fillRect(0, 500, 200, 50); // Test floor at y=500
+        // currentCtx.strokeStyle = '#000000';
+        // currentCtx.lineWidth = 2;
+        // currentCtx.strokeRect(0, 500, 200, 50); 
+        
+        // Old platform rendering removed - only floor tiles from level JSON are rendered
         
         if (window.vendor) {
             // Draw vendor as NPC with server-provided colors for consistent appearance
@@ -1052,6 +1160,10 @@ function initializeEngine() {
             } else {
                 // Fallback to basic character drawing if no colors from server
                 // Don't use equipment to avoid making vendor look like player
+                // Ensure vendor has anim property before accessing it
+                if (!window.vendor.anim) {
+                    window.vendor.anim = {timer: 0, index: 0};
+                }
                 const frame = window.advanceAnim ? window.advanceAnim(window.vendor.anim, dt, false, false) : 0;
                 currentCtx.save();
                 currentCtx.imageSmoothingEnabled = false;
@@ -1340,6 +1452,39 @@ function initializeEngine() {
         
         // Draw projectiles
         if (window.projectiles && Array.isArray(window.projectiles)) {
+            // Clean up projectiles that are off-screen or expired
+            const cameraLeft = window.player.x - window.CAM_W / 2;
+            const cameraRight = window.player.x + window.CAM_W / 2;
+            const cameraTop = window.player.y - window.CAM_H / 2;
+            const cameraBottom = window.player.y + window.CAM_H / 2;
+            const margin = 500; // Remove if beyond this margin outside camera
+            
+            for (let i = window.projectiles.length - 1; i >= 0; i--) {
+                const projectile = window.projectiles[i];
+                if (!projectile || projectile.destroyed) {
+                    window.projectiles.splice(i, 1);
+                    continue;
+                }
+                
+                // Remove projectiles that are way off-screen
+                if (projectile.x < cameraLeft - margin || 
+                    projectile.x > cameraRight + margin || 
+                    projectile.y > cameraBottom + margin ||
+                    projectile.y < cameraTop - margin) {
+                    window.projectiles.splice(i, 1);
+                    continue;
+                }
+                
+                // Remove enemy projectiles that have expired (if they have createdAt and lifeTime)
+                if (projectile.isEnemyProjectile && projectile.createdAt && projectile.lifeTime) {
+                    const now = Date.now();
+                    if (now - projectile.createdAt > projectile.lifeTime) {
+                        window.projectiles.splice(i, 1);
+                        continue;
+                    }
+                }
+            }
+            
             for (const projectile of window.projectiles) {
                 if (!projectile || projectile.destroyed) continue;
                 
@@ -1556,6 +1701,20 @@ function initializeEngine() {
                 currentCtx.fillText(`Respawn in ${countdown}s`, window.player.x + window.player.w/2, window.player.y - 5);
             }
             currentCtx.restore();
+        }
+        
+        // Render portals
+        if (window.gameState && window.gameState.portals) {
+            for (const portal of window.gameState.portals) {
+                if (window.Portal) {
+                    // Ensure portal has proper dimensions
+                    const portalObj = new window.Portal(portal.id, portal.x, portal.y, portal.targetLevel);
+                    portalObj.w = portal.w || portal.width || 64;
+                    portalObj.h = portal.h || portal.height || 64;
+                    portalObj.update(dt);
+                    portalObj.draw(currentCtx);
+                }
+            }
         }
         
         currentCtx.restore(); 

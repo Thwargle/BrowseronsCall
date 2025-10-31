@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Floor Rendering Test</title>
+    <style>
+        body { margin: 0; padding: 20px; background: #333; color: white; font-family: Arial; }
+        canvas { border: 2px solid #666; background: #9bd3ff; }
+        .info { margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Floor Rendering Test</h1>
+    <canvas id="testCanvas" width="800" height="600"></canvas>
+    <div class="info">
+        <p>This test shows different floor materials:</p>
+        <ul>
+            <li><span style="color: #8B4513;">■</span> Dirt (brown)</li>
+            <li><span style="color: #228B22;">■</span> Grass (green)</li>
+            <li><span style="color: #696969;">■</span> Stone (gray)</li>
+            <li><span style="color: #2F4F4F;">■</span> Rock (dark gray)</li>
+            <li><span style="color: #F4A460;">■</span> Sand (sandy brown)</li>
+            <li><span style="color: #4169E1;">■</span> Water (blue)</li>
+        </ul>
+    </div>
+
+    <script>
+        // Test floor rendering
+        const canvas = document.getElementById('testCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Define materials (matching engine.js)
+        const materials = {
+            dirt: { color: '#8B4513', pattern: 'dirt' },
+            grass: { color: '#228B22', pattern: 'grass' },
+            stone: { color: '#696969', pattern: 'stone' },
+            rock: { color: '#2F4F4F', pattern: 'rock' }, // Dark gray for rock
+            sand: { color: '#F4A460', pattern: 'sand' },
+            water: { color: '#4169E1', pattern: 'water' }
+        };
+        
+        // Test floor data
+        const testFloors = [
+            { x: 0, y: 550, width: 133, height: 50, material: 'dirt' },
+            { x: 133, y: 550, width: 133, height: 50, material: 'grass' },
+            { x: 266, y: 550, width: 133, height: 50, material: 'stone' },
+            { x: 399, y: 550, width: 133, height: 50, material: 'rock' },
+            { x: 532, y: 550, width: 133, height: 50, material: 'sand' },
+            { x: 665, y: 550, width: 135, height: 50, material: 'water' },
+            
+            // Add some elevated platforms
+            { x: 100, y: 400, width: 100, height: 30, material: 'grass' },
+            { x: 250, y: 350, width: 100, height: 30, material: 'stone' },
+            { x: 400, y: 300, width: 100, height: 30, material: 'sand' },
+            { x: 550, y: 250, width: 100, height: 30, material: 'water' }
+        ];
+        
+        // Clear canvas
+        ctx.fillStyle = '#9bd3ff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw floors
+        for (const floor of testFloors) {
+            if (floor && floor.material && materials[floor.material]) {
+                const material = materials[floor.material];
+                ctx.fillStyle = material.color;
+                ctx.fillRect(floor.x, floor.y, floor.width, floor.height);
+                
+                // Add texture pattern for better visual distinction
+                ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(floor.x, floor.y, floor.width, floor.height);
+            }
+        }
+        
+        // Add labels
+        ctx.fillStyle = '#000';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        
+        testFloors.forEach((floor, index) => {
+            if (index < 6) { // Only label the ground-level floors
+                ctx.fillText(floor.material.toUpperCase(), 
+                    floor.x + floor.width/2, 
+                    floor.y + floor.height/2 + 4);
+            }
+        });
+        
+        console.log('Floor rendering test completed');
+    </script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 {
-  "name": "sample_level",
+  "name": "CustomLevel",
   "width": 3600,
   "height": 600,
   "floors": [
@@ -95,12 +95,12 @@
   "portals": [
     {
       "id": "portal_1",
-      "x": 3473,
-      "y": 412,
+      "x": 3488,
+      "y": 423,
       "width": 64,
       "height": 64,
-      "targetLevel": "watertest"
+      "targetLevel": "sample_level"
     }
   ],
-  "lastModified": "2025-09-18T18:42:32.135Z"
+  "lastModified": "2025-09-18T18:37:58.690Z"
 }

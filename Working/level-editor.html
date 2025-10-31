@@ -133,6 +133,10 @@
             background: linear-gradient(45deg, #4CAF50, #45a049);
         }
 
+        .tool-btn.portal {
+            background: linear-gradient(45deg, #8A2BE2, #9370DB);
+        }
+
         .input-group {
             margin-bottom: 10px;
         }
@@ -320,6 +324,7 @@
                 <div class="tool-buttons">
                     <button class="tool-btn vendor" data-object="vendor" title="Vendor">Vendor</button>
                     <button class="tool-btn spawner" data-object="spawner" title="Enemy Spawner">Spawner</button>
+                    <button class="tool-btn portal" data-object="portal" title="Portal">Portal</button>
                     <button class="tool-btn select" data-object="select" title="Select Objects">Select</button>
                 </div>
                 <div class="input-group">
@@ -376,6 +381,22 @@
             </div>
 
             <div class="tool-section">
+                <h3>Portal Configuration</h3>
+                <div class="spawner-config" id="portalConfig">
+                    <div class="input-group">
+                        <label>Portal ID:</label>
+                        <input type="text" id="portalId" value="portal_1" placeholder="portal_1">
+                        <small>Auto-increments: portal_1, portal_2, portal_3...</small>
+                    </div>
+                    <div class="input-group">
+                        <label>Target Level:</label>
+                        <input type="text" id="portalTargetLevel" value="sample_level" placeholder="sample_level">
+                        <small>Level filename without .json extension</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tool-section">
                 <h3>Selected Object</h3>
                 <div class="selected-object-config" id="selectedObjectConfig">
                     <div class="input-group">
@@ -414,6 +435,10 @@
                     <div class="input-group" id="selectedSpawnerConfig5" style="display: none;">
                         <label>Max Level:</label>
                         <input type="number" id="selectedMaxLevel" min="1" max="10">
+                    </div>
+                    <div class="input-group" id="selectedPortalConfig" style="display: none;">
+                        <label>Target Level:</label>
+                        <input type="text" id="selectedPortalTargetLevel">
                     </div>
                     <div class="action-buttons">
                         <button class="action-btn primary" id="updateSelectedObject" style="display: none;">Update Object</button>

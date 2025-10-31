@@ -1340,6 +1340,109 @@ window.drawWeapon=function(ctx,x,y,flip,it,angle=0){
 
 window.swingAngle=function(progress){ return (-Math.PI/3) + progress*(2*Math.PI/3); }
 
+// Portal class for level transitions
+window.Portal=function(id, x, y, targetLevel) {
+    this.id = id;
+    this.x = x;
+    this.y = y;
+    this.w = 64;
+    this.h = 64;
+    this.targetLevel = targetLevel || 'sample_level';
+    this.rotation = 0;
+    this.rotationSpeed = 2; // radians per second
+    this.pulsePhase = 0;
+    this.pulseSpeed = 3; // pulses per second
+};
+
+Portal.prototype.update = function(dt) {
+    this.rotation += this.rotationSpeed * dt;
+    this.pulsePhase += this.pulseSpeed * dt;
+};
+
+Portal.prototype.draw = function(ctx) {
+    ctx.save();
+    
+    // Move to portal center
+    ctx.translate(this.x + this.w/2, this.y + this.h/2);
+    
+    // Apply rotation
+    ctx.rotate(this.rotation);
+    
+    // Calculate pulse effect
+    const pulseScale = 1 + Math.sin(this.pulsePhase * Math.PI * 2) * 0.15;
+    ctx.scale(pulseScale, pulseScale);
+    
+    // Draw glowing background
+    ctx.shadowColor = '#8A2BE2';
+    ctx.shadowBlur = 20;
+    ctx.fillStyle = '#4B0082';
+    ctx.globalAlpha = 0.3;
+    ctx.beginPath();
+    ctx.arc(0, 0, 35, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Reset shadow for rings
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1.0;
+    
+    // Draw outer ring - bright purple
+    ctx.strokeStyle = '#FF00FF';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.arc(0, 0, 30, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Draw middle ring - medium purple
+    ctx.strokeStyle = '#8A2BE2';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(0, 0, 22, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Draw inner ring - light purple
+    ctx.strokeStyle = '#DA70D6';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, 14, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Draw center - bright white
+    ctx.fillStyle = '#FFFFFF';
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath();
+    ctx.arc(0, 0, 8, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Draw animated sparkles
+    ctx.globalAlpha = 1.0;
+    ctx.fillStyle = '#FFFFFF';
+    for (let i = 0; i < 12; i++) {
+        const angle = (i / 12) * Math.PI * 2 + this.rotation;
+        const radius = 26 + Math.sin(this.pulsePhase * Math.PI * 2 + i) * 6;
+        const sparkleX = Math.cos(angle) * radius;
+        const sparkleY = Math.sin(angle) * radius;
+        
+        ctx.beginPath();
+        ctx.arc(sparkleX, sparkleY, 3, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    
+    // Draw "PORTAL" text
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 10px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('PORTAL', 0, -40);
+    
+    ctx.restore();
+};
+
+Portal.prototype.checkCollision = function(player) {
+    return player.x < this.x + this.w &&
+           player.x + player.w > this.x &&
+           player.y < this.y + this.h &&
+           player.y + player.h > this.y;
+};
+
 // world drops physics (with pickup delay)
 window.worldDrops = [];
 
@@ -1566,29 +1669,45 @@ Player.prototype.update=function(dt){
     this.onGround=false; 
     this.wallTouchTicks=0; 
     
-    // Platform collision detection
-    for(const p of platforms){ 
-        if(this.x+this.w > p.x && this.x < p.x + p.w && this.y + this.h > p.y && this.y < p.y+p.h){ 
-            const overlapX=Math.min(this.x+this.w - p.x, p.x+p.w - this.x); 
-            const overlapY=Math.min(this.y+this.h - p.y, p.y+p.h - this.y); 
+    // Floor tile collision detection (using level data)
+    const floors = window.gameState && window.gameState.floors ? window.gameState.floors : [];
+    let onFloor = false;
+    for(const floor of floors){ 
+        if(this.x+this.w > floor.x && this.x < floor.x + floor.width && this.y + this.h > floor.y && this.y < floor.y + floor.height){ 
+            const overlapX=Math.min(this.x+this.w - floor.x, floor.x+floor.width - this.x); 
+            const overlapY=Math.min(this.y+this.h - floor.y, floor.y+floor.height - this.y); 
             if(overlapY < overlapX){ 
                 if(this.vy>0){ 
-                    this.y = p.y - this.h; 
+                    this.y = floor.y - this.h; 
                     this.vy=0; 
                     this.onGround=true; 
                     this.jumpCount=0; 
+                    onFloor = true;
                 } else { 
-                    this.y = p.y + p.h; 
+                    this.y = floor.y + floor.height; 
                     this.vy = 0; 
                 } 
             } else { 
-                if(this.x < p.x) this.x = p.x - this.w; 
-                else this.x = p.x + p.w; 
+                if(this.x < floor.x) this.x = floor.x - this.w; 
+                else this.x = floor.x + floor.width; 
                 this.vx = 0; 
                 this.wallTouchTicks = 6; 
             } 
         } 
-    } 
+    }
+    
+    // Fallback to old ground collision if no floor collision and floors aren't loaded yet
+    if (!onFloor && (!window.gameState || !window.gameState.floors || window.gameState.floors.length === 0)) {
+        const groundY = window.GROUND_Y || 550;
+        if (this.y >= groundY - this.h) {
+            this.y = groundY - this.h;
+            this.vy = 0;
+            this.onGround = true;
+            this.jumpCount = 0;
+        }
+    }
+    
+    // Old platform collision removed - only floor tiles from level JSON are used 
     
     if(this.wallTouchTicks>0) this.wallTouchTicks--; 
     this.x = clamp(this.x,0,WORLD_W-this.w); 

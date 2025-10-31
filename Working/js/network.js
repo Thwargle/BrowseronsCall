@@ -40,13 +40,14 @@ window.wsConnect = function(url) {
             
             // Send join message - get name from login screen
             const playerName = document.getElementById('loginPlayerName').value.trim() || 'Player';
-            socket.send(JSON.stringify({
+            const joinMessage = {
                 type: 'join',
                 name: playerName,
                 shirtColor: window.BASE ? window.BASE.shirtColor : null,
                 pantColor: window.BASE ? window.BASE.pantColor : null,
                 equipmentColors: window.getEquipmentColors ? window.getEquipmentColors() : {}
-            }));
+            };
+            socket.send(JSON.stringify(joinMessage));
             
             // Don't send equipment snapshot on connection - let server send authoritative equipment data
             // The server will send playerData with equipment after connection
@@ -234,6 +235,7 @@ window.handleServerMessage = function(msg) {
                 try { socket && socket.close(1000, 'Join rejected'); } catch(_){}
                 break;
             case 'spawnEnemy':
+            case 'spellcaster':
                 // Ensure enemy list exists and track by id
                 if (!window.remoteEnemies) window.remoteEnemies = new Map();
                 const enemyData = { ...msg };
@@ -245,6 +247,52 @@ window.handleServerMessage = function(msg) {
                 break;
             case 'playerJoined':
                 window.log((msg.name || 'Player') + ' joined');
+                
+                // If this is our player joining, initialize inventory/equipment IMMEDIATELY from playerJoined
+                // playerJoined has equipment data, so use it right away - don't wait for playerData
+                if (window.player && window.player.id === msg.id) {
+                    // Initialize equipment from playerJoined immediately
+                    if (msg.equip) {
+                        const defaultEquip = {head:null,neck:null,shoulders:null,chest:null,waist:null,legs:null,feet:null,wrists:null,hands:null,mainhand:null,offhand:null,trinket:null};
+                        window.equip = { ...defaultEquip, ...msg.equip };
+                    } else {
+                        // Initialize empty equipment
+                        window.equip = {head:null,neck:null,shoulders:null,chest:null,waist:null,legs:null,feet:null,wrists:null,hands:null,mainhand:null,offhand:null,trinket:null};
+                    }
+                    
+                    // Initialize inventory (will be updated by playerData if it arrives)
+                    if (!window.bag || !Array.isArray(window.bag)) {
+                        window.bag = new Array(12).fill(null);
+                    }
+                    
+                    // Initialize UI and display IMMEDIATELY
+                    if (window.initInventoryUI) {
+                        window.initInventoryUI();
+                    }
+                    if (window.initPaperDollUI) {
+                        window.initPaperDollUI();
+                    }
+                    
+                    // Force display immediately and with retries
+                    const forceDisplay = () => {
+                        if (window.displayInventoryItems) {
+                            window.displayInventoryItems();
+                        }
+                    };
+                    
+                    forceDisplay();
+                    setTimeout(forceDisplay, 100);
+                    setTimeout(forceDisplay, 300);
+                    setTimeout(forceDisplay, 500);
+                    
+                    // Mark as complete if we have equipment to show
+                    if (window.equip && Object.values(window.equip).some(v => v !== null)) {
+                        setTimeout(() => {
+                            window.connectionStatus.initialConnectionComplete = true;
+                        }, 600);
+                    }
+                }
+                
                 if (!window.gameState) window.gameState = { players: [], enemies: [], worldDrops: [] };
                 if (!window.gameState.players.some(p => p.id === msg.id)) {
                     window.gameState.players.push({
@@ -382,26 +430,44 @@ window.handleServerMessage = function(msg) {
                 
             case 'playerData':
                 // Handle player data from server (inventory, equipment, etc.)
+                
+                // IMPORTANT: Update data first, then display UI - don't display until both are ready
+                let inventoryUpdated = false;
+                let equipmentUpdated = false;
+                
+                // Update equipment from server
                 if (msg.equip) {
                     // Ensure all equipment slots exist and restore from server data
                     const defaultEquip = {head:null,neck:null,shoulders:null,chest:null,waist:null,legs:null,feet:null,wrists:null,hands:null,mainhand:null,offhand:null,trinket:null};
                     // For reconnections, always use server data to ensure consistency
                     window.equip = { ...defaultEquip, ...msg.equip };
-                    console.log('Restoring equipment from server data:', window.equip);
+                    equipmentUpdated = true;
+                } else {
+                    // Ensure equipment object exists even if not provided
+                    if (!window.equip) {
+                        window.equip = {head:null,neck:null,shoulders:null,chest:null,waist:null,legs:null,feet:null,wrists:null,hands:null,mainhand:null,offhand:null,trinket:null};
+                    }
                 }
                 
+                // Update inventory from server
                 if (msg.inventory) {
                     // Server is authoritative - always use server data for reconnections
                     if (Array.isArray(msg.inventory)) {
-                        console.log('Restoring inventory from server data:', msg.inventory);
                         window.bag = [...msg.inventory];
                         while (window.bag.length < 12) window.bag.push(null);
                         if (window.bag.length > 12) window.bag = window.bag.slice(0, 12);
+                        inventoryUpdated = true;
                     } else {
-                        console.log('Server inventory data is not an array, creating empty bag');
+                        window.bag = new Array(12).fill(null);
+                        inventoryUpdated = true;
+                    }
+                } else {
+                    // Ensure bag exists even if not provided
+                    if (!window.bag || !Array.isArray(window.bag)) {
                         window.bag = new Array(12).fill(null);
                     }
                 }
+                
                 
                 // Ensure health regeneration system is properly initialized on reconnection
                 if (window.player && msg.health !== undefined) {
@@ -422,12 +488,19 @@ window.handleServerMessage = function(msg) {
                 }
                 
                 // Ensure inventory UI is fully ready before displaying items
+                // This function ensures UI is initialized and data is displayed correctly
                 const ensureInventoryReady = () => {
                     // Check if all required elements exist and are properly initialized
                     const inventory = document.getElementById('inventory');
-                    const hasInventoryElement = inventory && inventory.children.length > 0;
                     
-                    // Check if equipment slots exist
+                    // Initialize inventory UI if it doesn't exist or has no slots
+                    if (!inventory || inventory.children.length === 0) {
+                        if (window.initInventoryUI) {
+                            window.initInventoryUI();
+                        }
+                    }
+                    
+                    // Initialize equipment UI if needed
                     let equipmentSlots = document.querySelectorAll('.pd-slot');
                     if (equipmentSlots.length === 0) {
                         equipmentSlots = document.querySelectorAll('.equipSlot');
@@ -435,6 +508,22 @@ window.handleServerMessage = function(msg) {
                     if (equipmentSlots.length === 0) {
                         equipmentSlots = document.querySelectorAll('[data-slot]');
                     }
+                    if (equipmentSlots.length === 0) {
+                        if (window.initPaperDollUI) {
+                            window.initPaperDollUI();
+                        }
+                        // Re-check after initialization
+                        equipmentSlots = document.querySelectorAll('.pd-slot');
+                        if (equipmentSlots.length === 0) {
+                            equipmentSlots = document.querySelectorAll('.equipSlot');
+                        }
+                        if (equipmentSlots.length === 0) {
+                            equipmentSlots = document.querySelectorAll('[data-slot]');
+                        }
+                    }
+                    
+                    // Re-check inventory after potential initialization
+                    const hasInventoryElement = inventory && inventory.children.length > 0;
                     const hasEquipmentSlots = equipmentSlots.length > 0;
                     
                     // Check if required functions are available
@@ -446,37 +535,20 @@ window.handleServerMessage = function(msg) {
                                      document.body && 
                                      document.getElementById('ui');
                     
-                    console.log('Inventory readiness check:', {
-                        hasInventoryElement,
-                        inventorySlots: inventory?.children?.length || 0,
-                        hasEquipmentSlots,
-                        equipmentSlotsCount: equipmentSlots.length,
-                        hasRequiredFunctions,
-                        isDOMReady,
-                        readyState: document.readyState
-                    });
+                    // Ensure data exists
+                    const hasData = window.bag && Array.isArray(window.bag) && window.equip && typeof window.equip === 'object';
                     
-                    if (hasInventoryElement && hasEquipmentSlots && hasRequiredFunctions && isDOMReady) {
-                        console.log('Inventory UI is fully ready, displaying items');
-                        // Initialize UI if needed
-                        if (window.initInventoryUI) {
-                            window.initInventoryUI();
-                        }
-                        if (window.initPaperDollUI) {
-                            window.initPaperDollUI();
-                        }
+                    if (hasInventoryElement && hasEquipmentSlots && hasRequiredFunctions && isDOMReady && hasData) {
                         
                         // Display inventory items with multiple attempts to ensure success
                         const displayWithRetry = (attempt = 1) => {
                             try {
                                 if (window.displayInventoryItems) {
                                     window.displayInventoryItems();
-                                    console.log('Successfully displayed inventory items on attempt', attempt);
                                 } else {
                                     throw new Error('displayInventoryItems function not available');
                                 }
                             } catch (error) {
-                                console.warn(`Error displaying inventory items on attempt ${attempt}:`, error);
                                 if (attempt < 5) {
                                     setTimeout(() => displayWithRetry(attempt + 1), 200 * attempt);
                                 } else {
@@ -485,27 +557,95 @@ window.handleServerMessage = function(msg) {
                             }
                         };
                         
-                        // Start display process
-                        setTimeout(displayWithRetry, 100);
+                        // Start display process with a small delay to ensure DOM is ready
+                        setTimeout(() => {
+                            displayWithRetry();
+                            // Force an immediate additional refresh after a short delay to ensure equipment shows
+                            setTimeout(() => {
+                                if (window.displayInventoryItems) {
+                                    window.displayInventoryItems();
+                                }
+                            }, 200);
+                        }, 50);
                         
                         return true; // Success
                     } else {
-                        console.log('Inventory UI not ready yet, scheduling retry');
                         return false; // Not ready
                     }
                 };
                 
-                // Try to display inventory immediately, with fallback retries
-                if (!ensureInventoryReady()) {
-                    // Schedule multiple retries with increasing delays
-                    const retryDelays = [200, 500, 1000, 2000, 3000];
-                    retryDelays.forEach((delay, index) => {
-                        setTimeout(() => {
-                            if (!ensureInventoryReady()) {
-                                console.log(`Retry ${index + 1} failed, will retry in ${retryDelays[index + 1] || 'no more'}ms`);
-                            }
-                        }, delay);
+                // CRITICAL: playerData has arrived - update inventory and refresh display
+                // playerJoined already initialized equipment, but playerData has the full inventory
+                const forceDisplayInventory = () => {
+                    // Ensure UI is initialized (might have been done by playerJoined, but do it again to be sure)
+                    if (window.initInventoryUI && typeof window.initInventoryUI === 'function') {
+                        const inventory = document.getElementById('inventory');
+                        if (!inventory || inventory.children.length === 0) {
+                            window.initInventoryUI();
+                        }
+                    }
+                    
+                    if (window.initPaperDollUI && typeof window.initPaperDollUI === 'function') {
+                        let equipmentSlots = document.querySelectorAll('.pd-slot');
+                        if (equipmentSlots.length === 0) {
+                            window.initPaperDollUI();
+                        }
+                    }
+                    
+                    // Force display immediately - equipment should already be set from playerJoined
+                    if (window.displayInventoryItems && typeof window.displayInventoryItems === 'function') {
+                        try {
+                            window.displayInventoryItems();
+                            setTimeout(() => {
+                                window.displayInventoryItems();
+                            }, 100);
+                            setTimeout(() => {
+                                window.displayInventoryItems();
+                            }, 300);
+                        } catch (error) {
+                            console.error('Error force displaying inventory:', error);
+                        }
+                    }
+                };
+                
+                // Trigger display immediately - inventory has been updated above
+                forceDisplayInventory();
+                
+                // Also trigger it when DOM is definitely ready
+                if (document.readyState === 'complete') {
+                    setTimeout(() => forceDisplayInventory(), 100);
+                } else {
+                    window.addEventListener('load', () => {
+                        setTimeout(() => forceDisplayInventory(), 100);
                     });
+                }
+                
+                // Also use the ensureInventoryReady mechanism with retries
+                const retryDelays = [50, 100, 200, 500, 1000, 2000, 3000];
+                retryDelays.forEach((delay, index) => {
+                    setTimeout(() => {
+                        forceDisplayInventory();
+                        if (!ensureInventoryReady()) {
+                            if (index === retryDelays.length - 1) {
+                                console.error('Failed to display inventory after all retries');
+                            }
+                        }
+                    }, delay);
+                });
+                
+                // Mark connection as complete
+                if (msg.equip && equipmentUpdated) {
+                    setTimeout(() => {
+                        if (window.displayInventoryItems) {
+                            window.displayInventoryItems();
+                            window.displayInventoryItems();
+                            window.connectionStatus.initialConnectionComplete = true;
+                        }
+                    }, 500);
+                } else {
+                    setTimeout(() => {
+                        window.connectionStatus.initialConnectionComplete = true;
+                    }, 1000);
                 }
                 
                 // Ensure worldDrops exists
@@ -513,15 +653,78 @@ window.handleServerMessage = function(msg) {
                     window.worldDrops = [];
                 }
                 
-                // Mark initial connection as complete
-                window.connectionStatus.initialConnectionComplete = true;
-                
                 break;
                 
             case 'gameState':
+                // If we received gameState but haven't received playerData yet, try to get it from gameState
+                if (!window.connectionStatus.initialConnectionComplete && (!window.bag || window.bag.length === 0)) {
+                    // Try to find our player in gameState.players and initialize inventory from there
+                    if (window.player && window.player.id && msg.players && Array.isArray(msg.players)) {
+                        const ourPlayer = msg.players.find(p => p.id === window.player.id);
+                        if (ourPlayer) {
+                            if (ourPlayer.inventory) {
+                                window.bag = [...(ourPlayer.inventory || [])];
+                                while (window.bag.length < 12) window.bag.push(null);
+                                if (window.bag.length > 12) window.bag = window.bag.slice(0, 12);
+                            }
+                            if (ourPlayer.equip) {
+                                const defaultEquip = {head:null,neck:null,shoulders:null,chest:null,waist:null,legs:null,feet:null,wrists:null,hands:null,mainhand:null,offhand:null,trinket:null};
+                                window.equip = { ...defaultEquip, ...(ourPlayer.equip || {}) };
+                            }
+                            
+                            // Trigger inventory initialization and display
+                            setTimeout(() => {
+                                if (window.displayInventoryItems) {
+                                    window.displayInventoryItems();
+                                }
+                            }, 100);
+                        }
+                    }
+                }
+                
+                // ALWAYS process floors, vendor, spawners, and portals regardless of players
+                // Initialize gameState if it doesn't exist
+                if (!window.gameState) {
+                    window.gameState = {
+                        players: [],
+                        enemies: [],
+                        worldDrops: [],
+                        floors: [],
+                        vendor: null,
+                        spawners: [],
+                        portals: []
+                    };
+                }
+                
+                // Always set floors, vendor, spawners, and portals from server data
+                if (Array.isArray(msg.floors)) {
+                    window.gameState.floors = msg.floors;
+                    console.log('Set floors:', window.gameState.floors.length);
+                }
+                
+                if (msg.vendor) {
+                    window.gameState.vendor = {
+                        ...msg.vendor,
+                        anim: msg.vendor.anim || {timer: 0, index: 0}
+                    };
+                    window.vendor = window.gameState.vendor;
+                    console.log('Set vendor:', window.vendor.id);
+                }
+                
+                if (Array.isArray(msg.spawners)) {
+                    window.gameState.spawners = msg.spawners;
+                    window.spawners = msg.spawners;
+                    console.log('Set spawners:', window.spawners.length);
+                }
+                
+                if (Array.isArray(msg.portals)) {
+                    window.gameState.portals = msg.portals;
+                    window.portals = msg.portals;
+                    console.log('Set portals:', window.portals.length);
+                }
                 
                 // Handle initial game state
-                if (msg.players) {
+                if (msg.players && Array.isArray(msg.players)) {
                     // Update local game state with players from server, ensuring visual data is included
                     const playersWithVisualData = msg.players.map(player => ({
                         ...player,
@@ -530,11 +733,20 @@ window.handleServerMessage = function(msg) {
                         equipmentColors: player.equipmentColors || {}
                     }));
                     
-                    if (window.gameState) {
-                        window.gameState.players = playersWithVisualData;
-                    } else {
-                        window.gameState = { players: playersWithVisualData, enemies: msg.enemies || [], worldDrops: msg.worldDrops || [] };
-                    }
+                    // Update players in gameState (floors, vendor, spawners, portals already set above)
+                    window.gameState.players = playersWithVisualData;
+                    window.gameState.enemies = msg.enemies || [];
+                    window.gameState.worldDrops = msg.worldDrops || [];
+                    
+                    console.log('Updated gameState with players:', playersWithVisualData.length, 'players');
+                    
+                    // Update global rendering variables used by engine.js
+                    window.enemies = window.gameState.enemies;
+                    window.worldDrops = window.gameState.worldDrops;
+                    window.vendor = window.gameState.vendor;
+                    window.spawners = window.gameState.spawners;
+                    window.portals = window.gameState.portals;
+                    
                     
                     // If we have a local player, update their position from server data
                     if (window.player && window.player.id) {
@@ -545,8 +757,20 @@ window.handleServerMessage = function(msg) {
                             window.player.health = serverPlayer.health;
                             window.player.maxHealth = serverPlayer.maxHealth;
                             window.player.pyreals = serverPlayer.pyreals;
+                            console.log('Updated local player from server:', {
+                                id: window.player.id,
+                                x: window.player.x,
+                                y: window.player.y,
+                                health: window.player.health
+                            });
+                        } else {
+                            console.warn('Local player not found in server players list. Player ID:', window.player.id, 'Available players:', playersWithVisualData.map(p => p.id));
                         }
+                    } else {
+                        console.warn('Local player not initialized when gameState received. window.player:', !!window.player, 'window.player.id:', window.player?.id);
                     }
+                } else {
+                    console.log('No players in gameState message (might be initial connection)');
                 }
                 // Server-authoritative enemies
                 if (!window.remoteEnemies) window.remoteEnemies = new Map();
@@ -600,10 +824,11 @@ window.handleServerMessage = function(msg) {
                 // Vendor position and colors from server - ALWAYS process this
                 if (msg.vendor) {
                     // Ensure we preserve the colors from the server and don't override them
+                    // Always ensure anim property exists
                     const newVendor = { 
                         ...(window.vendor||{}), 
                         ...msg.vendor, 
-                        anim: (window.vendor && window.vendor.anim) || {timer:0,index:0},
+                        anim: msg.vendor.anim || (window.vendor && window.vendor.anim) || {timer:0,index:0},
                         // Explicitly ensure colors are preserved from server data
                         colors: msg.vendor.colors || null
                     };
@@ -615,7 +840,110 @@ window.handleServerMessage = function(msg) {
                 if (Array.isArray(msg.spawners)) {
                     window.spawners = msg.spawners.map(s => ({...s}));
                 }
+                
+                // Portals from server
+                if (Array.isArray(msg.portals)) {
+                    if (!window.gameState) window.gameState = {};
+                    window.gameState.portals = msg.portals.map(p => ({...p}));
+                    console.log('Received portals from server:', window.gameState.portals.length);
+                }
                 break;
+                
+            case 'levelChange':
+                // Handle level change - completely reload the level
+                console.log('Level changed to:', msg.levelName);
+                console.log('Received level data:', msg.levelData);
+                console.log('Received portals:', msg.portals);
+                
+                // CRITICAL: Clear ALL old level data completely before loading new level
+                // Clear remote enemies map (server-authoritative enemies)
+                if (window.remoteEnemies) {
+                    window.remoteEnemies.clear();
+                    console.log('Cleared remoteEnemies map');
+                }
+                
+                // Clear all projectiles from previous level
+                if (window.projectiles) {
+                    window.projectiles.length = 0;
+                    console.log('Cleared projectiles');
+                }
+                
+                // Clear world drops from previous level
+                if (window.worldDrops) {
+                    window.worldDrops.length = 0;
+                    console.log('Cleared world drops');
+                }
+                
+                // Clear local enemies array (for offline mode, shouldn't exist when connected but clear anyway)
+                if (window.enemies && Array.isArray(window.enemies)) {
+                    window.enemies.length = 0;
+                    console.log('Cleared local enemies');
+                }
+                
+                if (msg.levelData) {
+                    // Clear existing level data completely and use server-provided data
+                    window.gameState = {
+                        name: msg.levelData.name,
+                        width: msg.levelData.width,
+                        height: msg.levelData.height,
+                        floors: msg.floors || msg.levelData.floors || [],
+                        vendors: msg.levelData.vendors || [],
+                        spawners: msg.spawners || msg.levelData.spawners || [],
+                        portals: msg.portals || msg.levelData.portals || [],
+                        enemies: [], // Start with empty enemies - will be populated by server spawners
+                        worldDrops: msg.worldDrops || [], // Use server-provided world drops (should be empty for new level)
+                        players: msg.players || [], // Use server-provided players
+                        vendor: msg.vendor ? {
+                            ...msg.vendor,
+                            anim: msg.vendor.anim || {timer: 0, index: 0}
+                        } : null // Use server-provided vendor
+                    };
+                    
+                    // Update global variables used by engine.js for rendering
+                    window.spawners = window.gameState.spawners || [];
+                    window.portals = window.gameState.portals || [];
+                    window.vendor = window.gameState.vendor;
+                    window.worldDrops = window.gameState.worldDrops || [];
+                    window.enemies = window.gameState.enemies || [];
+                    
+                    // Ensure remoteEnemies map exists and is ready for new enemies
+                    // IMPORTANT: Clear it again here to ensure no enemies from previous level remain
+                    if (!window.remoteEnemies) {
+                        window.remoteEnemies = new Map();
+                    } else {
+                        // Double-check: clear any remaining enemies
+                        window.remoteEnemies.clear();
+                        console.log('Double-checked: cleared remoteEnemies map again');
+                    }
+                    
+                    console.log('Level completely reloaded - all old data cleared');
+                    console.log('New level state:', {
+                        floors: window.gameState.floors.length,
+                        spawners: window.spawners.length,
+                        portals: window.portals.length,
+                        enemies: window.enemies.length,
+                        remoteEnemies: window.remoteEnemies ? window.remoteEnemies.size : 0,
+                        worldDrops: window.worldDrops.length,
+                        vendor: !!window.vendor
+                    });
+                    
+                    // Reset player position to spawn point
+                    if (window.player) {
+                        window.player.x = 80; // Default spawn X
+                        window.player.y = 0;  // Default spawn Y
+                        window.player.portalCooldown = 0; // Reset portal cooldown
+                    }
+                    
+                    console.log('Level completely reloaded:', msg.levelName);
+                    console.log('New game state:', window.gameState);
+                    
+                    // Log that enemies will spawn from spawners after floors render
+                    if (window.spawners && window.spawners.length > 0) {
+                        console.log(`Enemies will spawn from ${window.spawners.length} spawners after floors render (2 second delay)`);
+                    }
+                }
+                break;
+                
             case 'playerUpdate':
                 // Update or create moving player in replicated state
                 if (!window.gameState) window.gameState = { players: [], enemies: [], worldDrops: [] };
@@ -892,8 +1220,19 @@ window.handleServerMessage = function(msg) {
                  // Add new projectile to local state (exclude the message type, keep projectile type)
                  const { type: messageType, ...projectileData } = msg;
                  const newProjectile = { ...projectileData };
-                 window.projectiles.push(newProjectile);
                  
+                 // Ensure enemy projectiles have proper metadata for cleanup
+                 if (newProjectile.isEnemyProjectile) {
+                     // Ensure createdAt and lifeTime are set for proper expiration
+                     if (!newProjectile.createdAt) {
+                         newProjectile.createdAt = Date.now();
+                     }
+                     if (!newProjectile.lifeTime) {
+                         newProjectile.lifeTime = 5000; // Default 5 seconds
+                     }
+                 }
+                 
+                 window.projectiles.push(newProjectile);
                  console.log('Added projectile to local array:', newProjectile.type, 'Total projectiles:', window.projectiles.length);
                  break;
                  

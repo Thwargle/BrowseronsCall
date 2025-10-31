@@ -1,0 +1,48 @@
+{
+  "name": "Custom Level",
+  "width": 3600,
+  "height": 600,
+  "floors": [
+    {
+      "x": 0,
+      "y": 550,
+      "width": 3600,
+      "height": 50,
+      "material": "grass"
+    }
+  ],
+  "vendors": [
+    {
+      "id": "vendor_1",
+      "name": "Custom Merchant",
+      "x": 600,
+      "y": 200,
+      "width": 48,
+      "height": 64
+    }
+  ],
+  "spawners": [
+    {
+      "id": "sp_1",
+      "x": 1200,
+      "y": 486,
+      "type": "basic",
+      "respawnTime": 5000,
+      "visibilityRange": 400,
+      "minLevel": 1,
+      "maxLevel": 3,
+      "currentEnemyId": null,
+      "respawnAt": 0
+    }
+  ],
+  "portals": [
+    {
+      "id": "portal_1",
+      "x": 100,
+      "y": 486,
+      "width": 64,
+      "height": 64,
+      "targetLevel": "sample_level"
+    }
+  ]
+}
