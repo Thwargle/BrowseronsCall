@@ -625,8 +625,9 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         if (data.equipmentColors !== undefined) player.equipmentColors = data.equipmentColors;
                         if (data.reach !== undefined) player.reach = data.reach;
                         
-                        // Broadcast player update to other players
-                        broadcastToOthers(playerId, {
+                        // Broadcast player update to other players in the same level only
+                        const currentLevel = playerLevels.get(playerId) || 'sample_level';
+                        broadcastToLevel(currentLevel, {
                             type: 'playerUpdate',
                             id: playerId,
                             ...player
@@ -645,8 +646,9 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         const player = gameState.players.get(playerId);
                         console.log(`Player ${playerName} updating inventory:`, data.inventory);
                         player.inventory = data.inventory;
-                        // broadcast to all players so they can render current inventory
-                        broadcastToAll({ type: 'inventoryUpdate', id: playerId, inventory: player.inventory });
+                        // broadcast to players in the same level so they can render current inventory
+                        const inventoryLevel = playerLevels.get(playerId) || 'sample_level';
+                        broadcastToLevel(inventoryLevel, { type: 'inventoryUpdate', id: playerId, inventory: player.inventory });
                     }
                     break;
 
@@ -657,8 +659,9 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         if (data.pantColor !== undefined) player.pantColor = data.pantColor;
                         if (data.equipmentColors !== undefined) player.equipmentColors = data.equipmentColors;
                         
-                        // Broadcast visual update to all players
-                        broadcastToAll({ 
+                        // Broadcast visual update to players in the same level
+                        const visualLevel = playerLevels.get(playerId) || 'sample_level';
+                        broadcastToLevel(visualLevel, { 
                             type: 'visualUpdate', 
                             id: playerId, 
                             shirtColor: player.shirtColor,
@@ -765,8 +768,19 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                 console.log(`- Spawners: ${newLevelData.spawners ? newLevelData.spawners.length : 0}`);
                                 console.log(`- Portals: ${newLevelData.portals ? newLevelData.portals.length : 0}`);
                                 
+                                // Get the old level before updating
+                                const oldLevel = playerLevels.get(playerId) || 'sample_level';
+                                
                                 // Update player's current level
                                 playerLevels.set(playerId, targetLevel);
+                                
+                                // Broadcast playerLeft to players in the old level (with levelChange flag)
+                                broadcastToLevel(oldLevel, {
+                                    type: 'playerLeft',
+                                    name: player.name,
+                                    id: playerId,
+                                    levelChange: true
+                                });
                                 
                                 // Get or create the level-specific game state
                                 // If level state already exists, ensure it's fresh (enemies and drops cleared for this player)
@@ -1092,8 +1106,8 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                         equip: player.equip
                                     }));
                                     
-                                    // Broadcast equipment update to all other players so they can render current equipment
-                                    broadcastToOthers(playerId, {
+                                    // Broadcast equipment update to players in the same level only
+                                    broadcastToLevel(movePlayerLevel, {
                                         type: 'equipUpdate',
                                         id: playerId,
                                         equip: player.equip
@@ -1138,8 +1152,8 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                         equip: player.equip
                                     }));
                                     
-                                    // Broadcast equipment update to all other players so they can render current equipment
-                                    broadcastToOthers(playerId, {
+                                    // Broadcast equipment update to players in the same level only
+                                    broadcastToLevel(movePlayerLevel, {
                                         type: 'equipUpdate',
                                         id: playerId,
                                         equip: player.equip
@@ -1174,8 +1188,8 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                         equip: player.equip
                                     }));
                                     
-                                    // Broadcast equipment update to all other players so they can render current equipment
-                                    broadcastToOthers(playerId, {
+                                    // Broadcast equipment update to players in the same level only
+                                    broadcastToLevel(movePlayerLevel, {
                                         type: 'equipUpdate',
                                         id: playerId,
                                         equip: player.equip
@@ -1253,8 +1267,8 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                     equip: player.equip
                                 }));
                                 
-                                // Broadcast equipment update to all other players so they can render current equipment
-                                broadcastToOthers(playerId, {
+                                // Broadcast equipment update to players in the same level only
+                                broadcastToLevel(dropPlayerLevel, {
                                     type: 'equipUpdate',
                                     id: playerId,
                                     equip: player.equip
@@ -1271,6 +1285,7 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                     // Handle selling items to vendor
                     if (playerId && gameState.players.has(playerId)) {
                         const player = gameState.players.get(playerId);
+                        const sellPlayerLevel = playerLevels.get(playerId) || 'sample_level';
                         const { itemId, fromWhere, fromIndex, fromSlot } = data;
                         
                         console.log(`Player ${playerName} selling item ${itemId} from ${fromWhere}`);
@@ -1313,8 +1328,8 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                     equip: player.equip
                                 }));
                                 
-                                // Broadcast equipment update to all other players so they can render current equipment
-                                broadcastToOthers(playerId, {
+                                // Broadcast equipment update to players in the same level only
+                                broadcastToLevel(sellPlayerLevel, {
                                     type: 'equipUpdate',
                                     id: playerId,
                                     equip: player.equip
@@ -1330,8 +1345,8 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                 pyreals: player.pyreals
                             }));
                             
-                            // Broadcast player update to others (for pyreals change)
-                            broadcastToOthers(playerId, {
+                            // Broadcast player update to players in the same level only (for pyreals change)
+                            broadcastToLevel(sellPlayerLevel, {
                                 type: 'playerUpdate',
                                 id: playerId,
                                 pyreals: player.pyreals
@@ -1866,7 +1881,7 @@ const gameLoopInterval = setInterval(() => {
             
             // Enemy movement AI
             const targetX = inRange ? (nearest.x || enemy.homeX || enemy.x) : (enemy.homeX || enemy.x);
-            const speedBase = 50;
+            const speedBase = 120;
             const speed = speedBase + (enemy.level || 1) * 6;
             
             if (enemy.x < targetX) {

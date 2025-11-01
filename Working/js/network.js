@@ -334,9 +334,13 @@ window.handleServerMessage = function(msg) {
                     if (idx !== -1) {
                         window.gameState.players.splice(idx, 1);
                         if (window.log) {
-                            window.log(msg.name + ' left the game');
+                            // Different message for level change vs leaving the game
+                            const message = msg.levelChange ? 
+                                (msg.name + ' left the level') : 
+                                (msg.name + ' left the game');
+                            window.log(message);
                         } else {
-                            console.log(msg.name + ' left the game');
+                            console.log(msg.name + ' left the ' + (msg.levelChange ? 'level' : 'game'));
                         }
                     }
                 }

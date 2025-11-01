@@ -1,27 +1,36 @@
 {
   "id": "Thwargle",
   "name": "Thwargle",
-  "x": 213.51474000000118,
+  "x": 458.99664000002963,
   "y": 486,
-  "health": 1091,
-  "maxHealth": 1091,
-  "pyreals": 36426,
+  "health": 1026,
+  "maxHealth": 1026,
+  "pyreals": 55918,
   "equip": {
     "head": {
-      "id": "armor-1756929855486-eg24ztebb",
-      "name": "Pristine Head of the Hero",
+      "id": "armor-1761978524742-3s460t9ct",
+      "name": "Eternal Head of the Ancients",
       "type": "armor",
-      "level": 5,
-      "rarity": "Epic",
-      "short": "Epic head armor piece with enhanced protection",
+      "level": 4,
+      "rarity": "Legendary",
+      "short": "Legendary head armor piece with enhanced protection",
       "slot": "head",
       "stats": {
-        "Endurance": 12,
-        "Health": 7,
-        "Coordination": 4
+        "Endurance": 13,
+        "Health": 6,
+        "Coordination": 3
       },
-      "value": 180,
-      "icon": null
+      "value": 336,
+      "icon": null,
+      "colors": {
+        "fill": "#32CD32",
+        "edge": "#228B22",
+        "legendary": true,
+        "gradient": {
+          "color1": "#32CD32",
+          "color2": "#9370DB"
+        }
+      }
     },
     "neck": {
       "id": "armor-1756928269158-ils7r7h3b",
@@ -56,19 +65,29 @@
       "icon": null
     },
     "chest": {
-      "id": "armor-1756944560672-jhc11c8zp",
-      "name": "Transcendent Chest of the Gods",
+      "id": "armor-1761978513747-pasb0vh7u",
+      "name": "Divine Chest of the Legend",
       "type": "armor",
-      "level": 5,
+      "level": 6,
       "rarity": "Legendary",
       "short": "Legendary chest armor piece with enhanced protection",
       "slot": "chest",
       "stats": {
-        "Endurance": 15,
-        "Coordination": 5
+        "Focus": 17,
+        "Mana": 8,
+        "Endurance": 6
       },
-      "value": 420,
-      "icon": null
+      "value": 504,
+      "icon": null,
+      "colors": {
+        "fill": "#ff4500",
+        "edge": "#dc143c",
+        "legendary": true,
+        "gradient": {
+          "color1": "#ff4500",
+          "color2": "#32CD32"
+        }
+      }
     },
     "waist": {
       "id": "armor-1756927063606-o7gq9uw34",
@@ -199,8 +218,8 @@
     null,
     null
   ],
-  "shirtColor": "#6b8e23",
-  "pantColor": "#808080",
+  "shirtColor": "#2f4f4f",
+  "pantColor": "#a0522d",
   "equipmentColors": {},
-  "lastSaved": 1761886791992
+  "lastSaved": 1761978614281
 }

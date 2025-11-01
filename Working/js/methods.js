@@ -662,49 +662,96 @@ window.advanceAnim=function(anim, dt, isAir, isMoving){
 
 // equipment draw helpers
 function box(ctx,x,y,w,h,fill,edge){ ctx.fillStyle=fill; ctx.fillRect(x,y,w,h); ctx.fillStyle=edge; ctx.fillRect(x,y,w,2); ctx.fillRect(x,y,2,h); }
+
+// Helper function to extract colors from an item
+function getItemColors(it) {
+    // Get colors from item if available, otherwise use material detection
+    if(it.colors && it.colors.fill && it.colors.edge) {
+        return {
+            fill: it.colors.fill,
+            edge: it.colors.edge,
+            isLegendary: it.colors.legendary || false,
+            gradientColors: it.colors.gradient || null
+        };
+    } else {
+        // Fallback to material detection
+        const nm=(it.name||'').toLowerCase();
+        let fill, edge;
+        if(nm.includes('leather') || nm.includes('hide')) {
+            fill = '#a57544'; edge = '#6b4423';
+        } else if(nm.includes('cloth') || nm.includes('silk') || nm.includes('robe')) {
+            fill = '#6ea2d6'; edge = '#3d688d';
+        } else if(nm.includes('dragonhide')) {
+            fill = '#dc2626'; edge = '#991b1b';
+        } else if(nm.includes('shadowweave')) {
+            fill = '#1f2937'; edge = '#111827';
+        } else if(nm.includes('celestial')) {
+            fill = '#fbbf24'; edge = '#d97706';
+        } else if(nm.includes('void-touched')) {
+            fill = '#7c3aed'; edge = '#5b21b6';
+        } else if(nm.includes('gold') || nm.includes('royal')) {
+            fill = '#ffd700'; edge = '#b8860b';
+        } else if(nm.includes('silver') || nm.includes('mithril')) {
+            fill = '#c0c0c0'; edge = '#a9a9a9';
+        } else if(nm.includes('crystal') || nm.includes('prismatic')) {
+            fill = '#e6e6fa'; edge = '#d8bfd8';
+        } else if(nm.includes('fire') || nm.includes('flame')) {
+            fill = '#ff4500'; edge = '#dc143c';
+        } else if(nm.includes('ice') || nm.includes('frost')) {
+            fill = '#87ceeb'; edge = '#4682b4';
+        } else if(nm.includes('chain') || nm.includes('mail')) {
+            fill = '#a9a9a9'; edge = '#696969';
+        } else if(nm.includes('pearl') || nm.includes('gem')) {
+            fill = '#f0f8ff'; edge = '#e6e6fa';
+        } else {
+            fill = '#d5dceb'; edge = '#9eb0c8';
+        }
+        return { fill: fill, edge: edge, isLegendary: false, gradientColors: null };
+    }
+}
+
+// Function to draw box with optional legendary gradient
+function boxWithGradient(ctx,x,y,w,h,fill,edge,isLegendary,gradientColors){
+    if(isLegendary && gradientColors && gradientColors.color1 && gradientColors.color2){
+        // Create radial gradient for legendary items (top-left to bottom-right)
+        const gradient = ctx.createLinearGradient(x, y, x+w, y+h);
+        gradient.addColorStop(0, gradientColors.color1);
+        gradient.addColorStop(1, gradientColors.color2);
+        ctx.fillStyle = gradient;
+        ctx.fillRect(x,y,w,h);
+        // Add edge in darker color
+        ctx.fillStyle=edge; 
+        ctx.fillRect(x,y,w,2); 
+        ctx.fillRect(x,y,2,h);
+    } else {
+        // Standard box drawing
+        ctx.fillStyle=fill; 
+        ctx.fillRect(x,y,w,h); 
+        ctx.fillStyle=edge; 
+        ctx.fillRect(x,y,w,2); 
+        ctx.fillRect(x,y,2,h);
+    }
+}
+
 function strokeRect(ctx,x,y,w,h,c){ ctx.strokeStyle=c; ctx.lineWidth=2; ctx.strokeRect(x+0.5,y+0.5,w-1,h-1); }
 
 // Draw helmet with proper head alignment and expanded colors
 window.drawHelmet=function(ctx,x,y,it){ 
     if(!it) return; 
-    const nm=(it.name||'').toLowerCase();
-    let fill, edge;
     
-    // Expanded material detection with more color variety
-    if(nm.includes('leather') || nm.includes('hide')) {
-        fill = '#a57544'; edge = '#6b4423';
-    } else if(nm.includes('cloth') || nm.includes('silk') || nm.includes('robe')) {
-        fill = '#6ea2d6'; edge = '#3d688d';
-    } else if(nm.includes('dragonhide')) {
-        fill = '#dc2626'; edge = '#991b1b';
-    } else if(nm.includes('shadowweave')) {
-        fill = '#1f2937'; edge = '#111827';
-    } else if(nm.includes('celestial')) {
-        fill = '#fbbf24'; edge = '#d97706';
-    } else if(nm.includes('void-touched')) {
-        fill = '#7c3aed'; edge = '#5b21b6';
-    } else if(nm.includes('gold') || nm.includes('royal')) {
-        fill = '#ffd700'; edge = '#b8860b';
-    } else if(nm.includes('silver') || nm.includes('mithril')) {
-        fill = '#c0c0c0'; edge = '#a9a9a9';
-    } else if(nm.includes('crystal') || nm.includes('prismatic')) {
-        fill = '#e6e6fa'; edge = '#d8bfd8';
-    } else if(nm.includes('fire') || nm.includes('flame')) {
-        fill = '#ff4500'; edge = '#dc143c';
-    } else if(nm.includes('ice') || nm.includes('frost')) {
-        fill = '#87ceeb'; edge = '#4682b4';
-    } else if(nm.includes('chain') || nm.includes('mail')) {
-        fill = '#a9a9a9'; edge = '#696969';
-    } else {
-        fill = '#d5dceb'; edge = '#9eb0c8';
-    }
+    // Get colors from item
+    const colors = getItemColors(it);
+    const fill = colors.fill;
+    const edge = colors.edge;
+    
+    const nm=(it.name||'').toLowerCase();
     
     // Determine helmet style based on name
     if(nm.includes('crown') || nm.includes('royal')) {
         // Crown style - positioned on top of head with 2px wider border
         // Head zone: y+2 to y+14 (12px height), so crown should be y+0 to y+16 (16px height)
         // Width: 20px + 4px border = 24px, centered on x+12
-        box(ctx,x+12,y+0,24,16,fill,edge); 
+        boxWithGradient(ctx,x+12,y+0,24,16,fill,edge,colors.isLegendary,colors.gradientColors); 
         strokeRect(ctx,x+12,y+0,24,16,'#1b2430'); 
         
         // Crown jewels
@@ -716,7 +763,7 @@ window.drawHelmet=function(ctx,x,y,it){
     } else if(nm.includes('circlet') || nm.includes('band')) {
         // Circlet style - positioned around head with 2px wider border
         // Width: 16px + 4px border = 20px, centered on x+14
-        box(ctx,x+14,y+0,20,6,fill,edge); 
+        boxWithGradient(ctx,x+14,y+0,20,6,fill,edge,colors.isLegendary,colors.gradientColors); 
         strokeRect(ctx,x+14,y+0,20,6,'#1b2430'); 
         
         // Circlet gem
@@ -726,7 +773,7 @@ window.drawHelmet=function(ctx,x,y,it){
     } else {
         // Standard helmet - positioned on head with 2px wider border
         // Width: 20px + 4px border = 24px, centered on x+12
-        box(ctx,x+12,y+0,24,12,fill,edge); 
+        boxWithGradient(ctx,x+12,y+0,24,12,fill,edge,colors.isLegendary,colors.gradientColors); 
         strokeRect(ctx,x+12,y+0,24,12,'#1b2430'); 
         
         // Helmet visor
@@ -742,43 +789,19 @@ window.drawHelmet=function(ctx,x,y,it){
 // Draw other armor slots
 window.drawShoulders=function(ctx,x,y,it){ 
     if(!it) return; 
-    const nm=(it.name||'').toLowerCase();
-    let fill, edge;
     
-    // Expanded material detection with more color variety
-    if(nm.includes('leather') || nm.includes('hide')) {
-        fill = '#a57544'; edge = '#6b4423';
-    } else if(nm.includes('cloth') || nm.includes('silk') || nm.includes('robe')) {
-        fill = '#6ea2d6'; edge = '#3d688d';
-    } else if(nm.includes('dragonhide')) {
-        fill = '#dc2626'; edge = '#991b1b';
-    } else if(nm.includes('shadowweave')) {
-        fill = '#1f2937'; edge = '#111827';
-    } else if(nm.includes('celestial')) {
-        fill = '#fbbf24'; edge = '#d97706';
-    } else if(nm.includes('void-touched')) {
-        fill = '#7c3aed'; edge = '#5b21b6';
-    } else if(nm.includes('gold') || nm.includes('royal')) {
-        fill = '#ffd700'; edge = '#b8860b';
-    } else if(nm.includes('silver') || nm.includes('mithril')) {
-        fill = '#c0c0c0'; edge = '#a9a9a9';
-    } else if(nm.includes('crystal') || nm.includes('prismatic')) {
-        fill = '#e6e6fa'; edge = '#d8bfd8';
-    } else if(nm.includes('fire') || nm.includes('flame')) {
-        fill = '#ff4500'; edge = '#dc143c';
-    } else if(nm.includes('ice') || nm.includes('frost')) {
-        fill = '#87ceeb'; edge = '#4682b4';
-    } else {
-        fill = '#d5dceb'; edge = '#9eb0c8';
-    }
+    // Get colors from item
+    const colors = getItemColors(it);
+    const fill = colors.fill;
+    const edge = colors.edge;
     
     // Left shoulder (character's left, screen right when facing right) - positioned higher and more outward
     // Shoulder zone: y+16 to y+22 (6px height), so shoulders should be y+14 to y+24 (10px height)
     // Width: 10px + 4px border = 14px, positioned at x+7 (moved 3px to the right)
-    box(ctx,x+7,y+14,14,10,fill,edge); 
+    boxWithGradient(ctx,x+7,y+14,14,10,fill,edge,colors.isLegendary,colors.gradientColors); 
     // Right shoulder (character's right, screen left when facing right) - positioned higher and more outward
     // Positioned at x+29 (moved 3px to the right)
-    box(ctx,x+29,y+14,14,10,fill,edge); 
+    boxWithGradient(ctx,x+29,y+14,14,10,fill,edge,colors.isLegendary,colors.gradientColors); 
     
     // Add shoulder pad details
     strokeRect(ctx,x+7,y+14,14,10,'#1b2430'); 
@@ -792,44 +815,20 @@ window.drawShoulders=function(ctx,x,y,it){
 // Draw wrists with proper positioning on character's arms
 window.drawWrists=function(ctx,x,y,it){ 
     if(!it) return; 
-    const nm=(it.name||'').toLowerCase();
-    let fill, edge;
     
-    // Expanded material detection with more color variety
-    if(nm.includes('leather') || nm.includes('hide')) {
-        fill = '#a57544'; edge = '#6b4423';
-    } else if(nm.includes('cloth') || nm.includes('silk') || nm.includes('robe')) {
-        fill = '#6ea2d6'; edge = '#3d688d';
-    } else if(nm.includes('dragonhide')) {
-        fill = '#dc2626'; edge = '#991b1b';
-    } else if(nm.includes('shadowweave')) {
-        fill = '#1f2937'; edge = '#111827';
-    } else if(nm.includes('celestial')) {
-        fill = '#fbbf24'; edge = '#d97706';
-    } else if(nm.includes('void-touched')) {
-        fill = '#7c3aed'; edge = '#5b21b6';
-    } else if(nm.includes('gold') || nm.includes('royal')) {
-        fill = '#ffd700'; edge = '#b8860b';
-    } else if(nm.includes('silver') || nm.includes('mithril')) {
-        fill = '#c0c0c0'; edge = '#a9a9a9';
-    } else if(nm.includes('crystal') || nm.includes('prismatic')) {
-        fill = '#e6e6fa'; edge = '#d8bfd8';
-    } else if(nm.includes('fire') || nm.includes('flame')) {
-        fill = '#ff4500'; edge = '#dc143c';
-    } else if(nm.includes('ice') || nm.includes('frost')) {
-        fill = '#87ceeb'; edge = '#4682b4';
-    } else {
-        fill = '#d5dceb'; edge = '#9eb0c8';
-    }
+    // Get colors from item
+    const colors = getItemColors(it);
+    const fill = colors.fill;
+    const edge = colors.edge;
     
     // Left wrist (character's left, screen right when facing right) - positioned on left arm
     // Width: 7px + 4px border = 11px, positioned at x+4 (moved 3.5px toward center to maintain balance)
     // Moved down 3px from y+18 to y+21
-    box(ctx,x+7.5,y+21,11,10,fill,edge); 
+    boxWithGradient(ctx,x+7.5,y+21,11,10,fill,edge,colors.isLegendary,colors.gradientColors); 
     // Right wrist (character's right, screen left when facing right) - positioned on right arm
     // Positioned at x+30.5 (moved 3.5px toward center to maintain balance)
     // Moved down 3px from y+18 to y+21
-    box(ctx,x+30.5,y+21,11,10,fill,edge); 
+    boxWithGradient(ctx,x+30.5,y+21,11,10,fill,edge,colors.isLegendary,colors.gradientColors); 
     
     // Add wrist band details
     strokeRect(ctx,x+7.5,y+21,11,10,'#1b2430'); 
@@ -844,40 +843,16 @@ window.drawWrists=function(ctx,x,y,it){
 // Draw waist/belt with proper positioning around character's waist
 window.drawWaist=function(ctx,x,y,it){ 
     if(!it) return; 
-    const nm=(it.name||'').toLowerCase();
-    let fill, edge;
     
-    // Expanded material detection with more color variety
-    if(nm.includes('leather') || nm.includes('hide')) {
-        fill = '#a57544'; edge = '#6b4423';
-    } else if(nm.includes('cloth') || nm.includes('silk') || nm.includes('robe')) {
-        fill = '#6ea2d6'; edge = '#3d688d';
-    } else if(nm.includes('dragonhide')) {
-        fill = '#dc2626'; edge = '#991b1b';
-    } else if(nm.includes('shadowweave')) {
-        fill = '#1f2937'; edge = '#111827';
-    } else if(nm.includes('celestial')) {
-        fill = '#fbbf24'; edge = '#d97706';
-    } else if(nm.includes('void-touched')) {
-        fill = '#7c3aed'; edge = '#5b21b6';
-    } else if(nm.includes('gold') || nm.includes('royal')) {
-        fill = '#ffd700'; edge = '#b8860b';
-    } else if(nm.includes('silver') || nm.includes('mithril')) {
-        fill = '#c0c0c0'; edge = '#a9a9a9';
-    } else if(nm.includes('crystal') || nm.includes('prismatic')) {
-        fill = '#e6e6fa'; edge = '#d8bfd8';
-    } else if(nm.includes('fire') || nm.includes('flame')) {
-        fill = '#ff4500'; edge = '#dc143c';
-    } else if(nm.includes('ice') || nm.includes('frost')) {
-        fill = '#87ceeb'; edge = '#4682b4';
-    } else {
-        fill = '#d5dceb'; edge = '#9eb0c8';
-    }
+    // Get colors from item
+    const colors = getItemColors(it);
+    const fill = colors.fill;
+    const edge = colors.edge;
     
     // Main belt around waist - positioned at waist level with 2px wider border
     // Waist zone: y+32 to y+36 (4px height), so belt should be y+30 to y+36 (6px height)
     // Width: 13px + 4px border = 17px, centered on x+15 (moved 7px toward center to maintain balance)
-    box(ctx,x+15,y+30,17,6,fill,edge); 
+    boxWithGradient(ctx,x+15,y+30,17,6,fill,edge,colors.isLegendary,colors.gradientColors); 
     
     // Belt buckle in center
     ctx.fillStyle = edge;
@@ -900,42 +875,16 @@ window.drawWaist=function(ctx,x,y,it){
 // Draw neck items with proper positioning around character's neck
 window.drawNeck=function(ctx,x,y,it){ 
     if(!it) return; 
-    const nm=(it.name||'').toLowerCase();
-    let fill, edge;
     
-    // Expanded material detection with more color variety
-    if(nm.includes('leather') || nm.includes('hide')) {
-        fill = '#a57544'; edge = '#6b4423';
-    } else if(nm.includes('cloth') || nm.includes('silk') || nm.includes('robe')) {
-        fill = '#6ea2d6'; edge = '#3d688d';
-    } else if(nm.includes('dragonhide')) {
-        fill = '#dc2626'; edge = '#991b1b';
-    } else if(nm.includes('shadowweave')) {
-        fill = '#1f2937'; edge = '#111827';
-    } else if(nm.includes('celestial')) {
-        fill = '#fbbf24'; edge = '#d97706';
-    } else if(nm.includes('void-touched')) {
-        fill = '#7c3aed'; edge = '#5b21b6';
-    } else if(nm.includes('gold') || nm.includes('royal')) {
-        fill = '#ffd700'; edge = '#b8860b';
-    } else if(nm.includes('silver') || nm.includes('mithril')) {
-        fill = '#c0c0c0'; edge = '#a9a9a9';
-    } else if(nm.includes('crystal') || nm.includes('prismatic')) {
-        fill = '#e6e6fa'; edge = '#d8bfd8';
-    } else if(nm.includes('fire') || nm.includes('flame')) {
-        fill = '#ff4500'; edge = '#dc143c';
-    } else if(nm.includes('ice') || nm.includes('frost')) {
-        fill = '#87ceeb'; edge = '#4682b4';
-    } else if(nm.includes('pearl') || nm.includes('gem')) {
-        fill = '#f0f8ff'; edge = '#e6e6fa';
-    } else {
-        fill = '#d5dceb'; edge = '#9eb0c8';
-    }
+    // Get colors from item
+    const colors = getItemColors(it);
+    const fill = colors.fill;
+    const edge = colors.edge;
     
          // Main necklace/neck item - positioned at bottom of head, much smaller
      // Head ends at y+14, so neck item should be y+14 to y+20 (6px height)
      // Width: 8px + 2px border = 10px, centered on x+19
-     box(ctx,x+19,y+14,10,6,fill,edge); 
+     boxWithGradient(ctx,x+19,y+14,10,6,fill,edge,colors.isLegendary,colors.gradientColors); 
      
      // Necklace chain/string
      ctx.fillStyle = edge;
@@ -958,45 +907,19 @@ window.drawNeck=function(ctx,x,y,it){
 // Draw leg armor with proper positioning on character's legs
 window.drawLegs=function(ctx,x,y,it){ 
     if(!it) return; 
-    const nm=(it.name||'').toLowerCase();
-    let fill, edge;
     
-    // Expanded material detection with more color variety
-    if(nm.includes('leather') || nm.includes('hide')) {
-        fill = '#a57544'; edge = '#6b4423';
-    } else if(nm.includes('cloth') || nm.includes('silk') || nm.includes('robe')) {
-        fill = '#6ea2d6'; edge = '#3d688d';
-    } else if(nm.includes('dragonhide')) {
-        fill = '#dc2626'; edge = '#991b1b';
-    } else if(nm.includes('shadowweave')) {
-        fill = '#1f2937'; edge = '#111827';
-    } else if(nm.includes('celestial')) {
-        fill = '#fbbf24'; edge = '#d97706';
-    } else if(nm.includes('void-touched')) {
-        fill = '#7c3aed'; edge = '#5b21b6';
-    } else if(nm.includes('gold') || nm.includes('royal')) {
-        fill = '#ffd700'; edge = '#b8860b';
-    } else if(nm.includes('silver') || nm.includes('mithril')) {
-        fill = '#c0c0c0'; edge = '#a9a9a9';
-    } else if(nm.includes('crystal') || nm.includes('prismatic')) {
-        fill = '#e6e6fa'; edge = '#d8bfd8';
-    } else if(nm.includes('fire') || nm.includes('flame')) {
-        fill = '#ff4500'; edge = '#dc143c';
-    } else if(nm.includes('ice') || nm.includes('frost')) {
-        fill = '#87ceeb'; edge = '#4682b4';
-    } else if(nm.includes('chain') || nm.includes('mail')) {
-        fill = '#a9a9a9'; edge = '#696969';
-    } else {
-        fill = '#d5dceb'; edge = '#9eb0c8';
-    }
+    // Get colors from item
+    const colors = getItemColors(it);
+    const fill = colors.fill;
+    const edge = colors.edge;
     
     // Left leg armor (character's left, screen right when facing right)
     // Leg zone: y+36 to y+54 (18px height), so leg armor should be y+34 to y+52 (18px height)
     // Width: 8px + 4px border = 12px, positioned at x+11
-    box(ctx,x+11,y+34,12,18,fill,edge); 
+    boxWithGradient(ctx,x+11,y+34,12,18,fill,edge,colors.isLegendary,colors.gradientColors); 
     // Right leg armor (character's right, screen left when facing right)
     // Positioned at x+25
-    box(ctx,x+25,y+34,12,18,fill,edge); 
+    boxWithGradient(ctx,x+25,y+34,12,18,fill,edge,colors.isLegendary,colors.gradientColors); 
     
     // Add leg armor details
     strokeRect(ctx,x+11,y+34,12,18,'#1b2430'); 
@@ -1035,42 +958,16 @@ window.drawAllEquipment=function(ctx,x,y,equip,isPlayer=false){
 // Draw chest armor with proper alignment and expanded colors
 window.drawChest=function(ctx,x,y,it){ 
     if(!it) return; 
-    const nm=(it.name||'').toLowerCase();
-    let fill, edge;
     
-    // Expanded material detection with more color variety
-    if(nm.includes('leather') || nm.includes('hide')) {
-        fill = '#a57544'; edge = '#6b4423';
-    } else if(nm.includes('cloth') || nm.includes('silk') || nm.includes('robe')) {
-        fill = '#6ea2d6'; edge = '#3d688d';
-    } else if(nm.includes('dragonhide')) {
-        fill = '#dc2626'; edge = '#991b1b';
-    } else if(nm.includes('shadowweave')) {
-        fill = '#1f2937'; edge = '#111827';
-    } else if(nm.includes('celestial')) {
-        fill = '#fbbf24'; edge = '#d97706';
-    } else if(nm.includes('void-touched')) {
-        fill = '#7c3aed'; edge = '#5b21b6';
-    } else if(nm.includes('gold') || nm.includes('royal')) {
-        fill = '#ffd700'; edge = '#b8860b';
-    } else if(nm.includes('silver') || nm.includes('mithril')) {
-        fill = '#c0c0c0'; edge = '#a9a9a9';
-    } else if(nm.includes('crystal') || nm.includes('prismatic')) {
-        fill = '#e6e6fa'; edge = '#d8bfd8';
-    } else if(nm.includes('fire') || nm.includes('flame')) {
-        fill = '#ff4500'; edge = '#dc143c';
-    } else if(nm.includes('ice') || nm.includes('frost')) {
-        fill = '#87ceeb'; edge = '#4682b4';
-    } else if(nm.includes('chain') || nm.includes('mail')) {
-        fill = '#a9a9a9'; edge = '#696969';
-    } else {
-        fill = '#d5dceb'; edge = '#9eb0c8';
-    }
+    // Get colors from item
+    const colors = getItemColors(it);
+    const fill = colors.fill;
+    const edge = colors.edge;
     
     // Main chest armor - moved down 2px and 4px shorter
     // Chest zone: y+14 to y+34 (20px height), so armor should be y+14 to y+28 (14px height)
     // Width: 16px + 4px border = 20px, centered on x+14 (center of 48px character)
-    box(ctx,x+14,y+14,20,14,fill,edge); 
+    boxWithGradient(ctx,x+14,y+14,20,14,fill,edge,colors.isLegendary,colors.gradientColors); 
     
     // Add chest armor details
     strokeRect(ctx,x+14,y+14,20,14,'#1b2430'); 
@@ -1089,44 +986,18 @@ window.drawChest=function(ctx,x,y,it){
 // Draw gloves with proper hand alignment and expanded colors
 window.drawGloves=function(ctx,x,y,it){ 
     if(!it) return; 
-    const nm=(it.name||'').toLowerCase();
-    let fill, edge;
     
-    // Expanded material detection with more color variety
-    if(nm.includes('leather') || nm.includes('hide')) {
-        fill = '#a57544'; edge = '#6b4423';
-    } else if(nm.includes('cloth') || nm.includes('silk') || nm.includes('robe')) {
-        fill = '#6ea2d6'; edge = '#3d688d';
-    } else if(nm.includes('dragonhide')) {
-        fill = '#dc2626'; edge = '#991b1b';
-    } else if(nm.includes('shadowweave')) {
-        fill = '#1f2937'; edge = '#111827';
-    } else if(nm.includes('celestial')) {
-        fill = '#fbbf24'; edge = '#d97706';
-    } else if(nm.includes('void-touched')) {
-        fill = '#7c3aed'; edge = '#5b21b6';
-    } else if(nm.includes('gold') || nm.includes('royal')) {
-        fill = '#ffd700'; edge = '#b8860b';
-    } else if(nm.includes('silver') || nm.includes('mithril')) {
-        fill = '#c0c0c0'; edge = '#a9a9a9';
-    } else if(nm.includes('crystal') || nm.includes('prismatic')) {
-        fill = '#e6e6fa'; edge = '#d8bfd8';
-    } else if(nm.includes('fire') || nm.includes('flame')) {
-        fill = '#ff4500'; edge = '#dc143c';
-    } else if(nm.includes('ice') || nm.includes('frost')) {
-        fill = '#87ceeb'; edge = '#4682b4';
-    } else if(nm.includes('chain') || nm.includes('mail')) {
-        fill = '#a9a9a9'; edge = '#696969';
-    } else {
-        fill = '#d5dceb'; edge = '#9eb0c8';
-    }
+    // Get colors from item
+    const colors = getItemColors(it);
+    const fill = colors.fill;
+    const edge = colors.edge;
     
     // Left hand glove (character's left, screen right when facing right) - moved toward center 5px total, half as tall, and moved up 7px total
     // Arm zone: y+20 to y+36 (16px height), so gloves should be y+31 to y+41 (10px height - half of 20px, moved up 7px total)
     // Width: 4px + 4px border = 8px, positioned at x+8 (moved 5px toward center from x+3)
-    box(ctx,x+8,y+31,8,10,fill,edge); 
+    boxWithGradient(ctx,x+8,y+31,8,10,fill,edge,colors.isLegendary,colors.gradientColors); 
     // Right hand glove (character's right, screen left when facing right) - positioned at x+32 (moved 5px toward center from x+37)
-    box(ctx,x+32,y+31,8,10,fill,edge); 
+    boxWithGradient(ctx,x+32,y+31,8,10,fill,edge,colors.isLegendary,colors.gradientColors); 
     
     // Add glove details
     strokeRect(ctx,x+8,y+31,8,10,'#1b2430'); 
@@ -1146,45 +1017,19 @@ window.drawGloves=function(ctx,x,y,it){
 // Draw boots with proper foot alignment and expanded colors
 window.drawBoots=function(ctx,x,y,it){ 
     if(!it) return; 
-    const nm=(it.name||'').toLowerCase();
-    let fill, edge;
     
-    // Expanded material detection with more color variety
-    if(nm.includes('leather') || nm.includes('hide')) {
-        fill = '#a57544'; edge = '#6b4423';
-    } else if(nm.includes('cloth') || nm.includes('silk') || nm.includes('robe')) {
-        fill = '#6ea2d6'; edge = '#3d688d';
-    } else if(nm.includes('dragonhide')) {
-        fill = '#dc2626'; edge = '#991b1b';
-    } else if(nm.includes('shadowweave')) {
-        fill = '#1f2937'; edge = '#111827';
-    } else if(nm.includes('celestial')) {
-        fill = '#fbbf24'; edge = '#d97706';
-    } else if(nm.includes('void-touched')) {
-        fill = '#7c3aed'; edge = '#5b21b6';
-    } else if(nm.includes('gold') || nm.includes('royal')) {
-        fill = '#ffd700'; edge = '#b8860b';
-    } else if(nm.includes('silver') || nm.includes('mithril')) {
-        fill = '#c0c0c0'; edge = '#a9a9a9';
-    } else if(nm.includes('crystal') || nm.includes('prismatic')) {
-        fill = '#e6e6fa'; edge = '#d8bfd8';
-    } else if(nm.includes('fire') || nm.includes('flame')) {
-        fill = '#ff4500'; edge = '#dc143c';
-    } else if(nm.includes('ice') || nm.includes('frost')) {
-        fill = '#87ceeb'; edge = '#4682b4';
-    } else if(nm.includes('chain') || nm.includes('mail')) {
-        fill = '#a9a9a9'; edge = '#696969';
-    } else {
-        fill = '#d5dceb'; edge = '#9eb0c8';
-    }
+    // Get colors from item
+    const colors = getItemColors(it);
+    const fill = colors.fill;
+    const edge = colors.edge;
     
     // Left foot boot (character's left, screen right when facing right)
     // Foot zone: y+54 to y+64 (10px height), so boots should be y+54 to y+64 (10px height)
     // Width: 8px + 4px border = 12px, positioned at x+10
-    box(ctx,x+10,y+54,12,10,fill,edge); 
+    boxWithGradient(ctx,x+10,y+54,12,10,fill,edge,colors.isLegendary,colors.gradientColors); 
     // Right foot boot (character's right, screen left when facing right)
     // Positioned at x+26
-    box(ctx,x+26,y+54,12,10,fill,edge); 
+    boxWithGradient(ctx,x+26,y+54,12,10,fill,edge,colors.isLegendary,colors.gradientColors); 
     
     // Add boot details
     strokeRect(ctx,x+10,y+54,12,10,'#1b2430'); 

@@ -93,6 +93,57 @@ function generateItemName(itemType, rarity, baseName, slot = null) {
     return name;
 }
 
+// Function to generate random colors for armor items
+function generateArmorColors(rarity) {
+    if (rarity === 'Legendary') {
+        // For legendary items, generate two random colors for radiant gradient
+        const colorSets = [
+            { fill: '#ff4500', edge: '#dc143c' }, // Red
+            { fill: '#4169E1', edge: '#000080' }, // Blue
+            { fill: '#32CD32', edge: '#228B22' }, // Green
+            { fill: '#FFD700', edge: '#FFA500' }, // Gold
+            { fill: '#9370DB', edge: '#4B0082' }, // Purple
+            { fill: '#FF69B4', edge: '#C71585' }, // Pink
+            { fill: '#00CED1', edge: '#008B8B' }, // Cyan
+            { fill: '#FF6347', edge: '#8B0000' }, // Orange
+            { fill: '#1f2937', edge: '#111827' }, // Dark
+            { fill: '#DC143C', edge: '#191970' }  // Red-Blue
+        ];
+        
+        // Pick two random color sets
+        const set1 = colorSets[Math.floor(Math.random() * colorSets.length)];
+        const set2 = colorSets[Math.floor(Math.random() * colorSets.length)];
+        
+        return {
+            fill: set1.fill,
+            edge: set1.edge,
+            legendary: true,
+            gradient: {
+                color1: set1.fill,
+                color2: set2.fill
+            }
+        };
+    } else {
+        // For non-legendary items, generate a single random color
+        const colorSet = [
+            { fill: '#a57544', edge: '#6b4423' }, // Brown/Leather
+            { fill: '#6ea2d6', edge: '#3d688d' }, // Light Blue
+            { fill: '#a9a9a9', edge: '#696969' }, // Gray/Metal
+            { fill: '#dc2626', edge: '#991b1b' }, // Red
+            { fill: '#1f2937', edge: '#111827' }, // Dark Gray
+            { fill: '#fbbf24', edge: '#d97706' }, // Gold
+            { fill: '#7c3aed', edge: '#5b21b6' }, // Purple
+            { fill: '#c0c0c0', edge: '#a9a9a9' }, // Silver
+            { fill: '#e6e6fa', edge: '#d8bfd8' }, // Light Purple
+            { fill: '#ff4500', edge: '#dc143c' }, // Orange
+            { fill: '#87ceeb', edge: '#4682b4' }, // Light Blue
+            { fill: '#228b22', edge: '#006400' }  // Green
+        ];
+        
+        return colorSet[Math.floor(Math.random() * colorSet.length)];
+    }
+}
+
 // Function to generate loot based on enemy type and level
 function generateLoot(enemyType, enemyLevel) {
     const lootTable = LOOT_TABLES[enemyType] || LOOT_TABLES.basic;
@@ -239,6 +290,9 @@ function generateLoot(enemyType, enemyLevel) {
                 secondaryStats = { Endurance: Math.round(baseStatValue * 0.8) };
             }
             
+            // Generate colors for this armor piece
+            const colors = generateArmorColors(rarity);
+            
             dropItem = {
                 id: `armor-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
                 name: fullName,
@@ -249,7 +303,8 @@ function generateLoot(enemyType, enemyLevel) {
                 slot: slot,
                 stats: { ...primaryStats, ...secondaryStats },
                 value: Math.round(level * 12 * (rarity === 'Legendary' ? 7 : rarity === 'Epic' ? 3 : rarity === 'Rare' ? 2 : rarity === 'Uncommon' ? 1.5 : 1)),
-                icon: null
+                icon: null,
+                colors: colors
             };
         }
         
