@@ -429,6 +429,15 @@ window.handleServerMessage = function(msg) {
                     if (window.player) {
                         window.player.pyreals = msg.pyreals;
                     }
+                    // Update UI display immediately
+                    const goldAmtElement = document.getElementById('goldAmt');
+                    if (goldAmtElement) {
+                        goldAmtElement.innerText = msg.pyreals || 0;
+                    }
+                    // Refresh inventory UI to show updated pyreals
+                    if (typeof window.refreshInventoryUI === 'function') {
+                        window.refreshInventoryUI();
+                    }
                 }
                 break;
                 
@@ -438,6 +447,23 @@ window.handleServerMessage = function(msg) {
                 // IMPORTANT: Update data first, then display UI - don't display until both are ready
                 let inventoryUpdated = false;
                 let equipmentUpdated = false;
+                
+                // Update pyreals from server (restore persisted value)
+                if (msg.pyreals !== undefined) {
+                    if (window.player) {
+                        window.player.pyreals = msg.pyreals || 0;
+                        console.log('Restored pyreals from server:', window.player.pyreals);
+                    }
+                    // Update UI display immediately
+                    const goldAmtElement = document.getElementById('goldAmt');
+                    if (goldAmtElement) {
+                        goldAmtElement.innerText = (window.player && window.player.pyreals) || 0;
+                    }
+                    // Update UI display
+                    if (typeof window.refreshInventoryUI === 'function') {
+                        window.refreshInventoryUI();
+                    }
+                }
                 
                 // Update equipment from server
                 if (msg.equip) {
@@ -457,10 +483,17 @@ window.handleServerMessage = function(msg) {
                 if (msg.inventory) {
                     // Server is authoritative - always use server data for reconnections
                     if (Array.isArray(msg.inventory)) {
-                        window.bag = [...msg.inventory];
+                        // Normalize items in inventory to ensure they have all required properties
+                        window.bag = msg.inventory.map(item => {
+                            if (item && typeof window.normalizeItem === 'function') {
+                                return window.normalizeItem(item);
+                            }
+                            return item;
+                        });
                         while (window.bag.length < 12) window.bag.push(null);
                         if (window.bag.length > 12) window.bag = window.bag.slice(0, 12);
                         inventoryUpdated = true;
+                        console.log('Inventory restored from server:', window.bag.length, 'slots');
                     } else {
                         window.bag = new Array(12).fill(null);
                         inventoryUpdated = true;
@@ -482,12 +515,10 @@ window.handleServerMessage = function(msg) {
                         // (health regeneration starts after 30 seconds of no damage)
                         window.player._damageTimer = 31;
                         window.player._regenActive = true;
-                        console.log('Health regeneration enabled on reconnection - player has', msg.health, '/', window.player.maxHealth, 'health');
                     } else if (msg.health >= window.player.maxHealth) {
                         // Player is at full health, reset regeneration state
                         window.player._damageTimer = 0;
                         window.player._regenActive = false;
-                        console.log('Player at full health on reconnection, regeneration disabled');
                     }
                 }
                 
@@ -813,7 +844,7 @@ window.handleServerMessage = function(msg) {
                             delete normalizedDrop.noPickup; // Remove old property
                         } else if (!normalizedDrop.noPickupUntil) {
                             // Default pickup delay if neither property exists
-                            normalizedDrop.noPickupUntil = performance.now() + 1000;
+                            normalizedDrop.noPickupUntil = performance.now() + 300;
                         }
                         
                         // Normalize the item if it exists
@@ -988,12 +1019,10 @@ window.handleServerMessage = function(msg) {
                         // (health regeneration starts after 30 seconds of no damage)
                         window.player._damageTimer = 31;
                         window.player._regenActive = true;
-                        console.log('Health regeneration enabled from playerUpdate - player has', msg.health, '/', window.player.maxHealth, 'health');
                     } else if (msg.health >= window.player.maxHealth) {
                         // Player is at full health, reset regeneration state
                         window.player._damageTimer = 0;
                         window.player._regenActive = false;
-                        console.log('Player at full health from playerUpdate, regeneration disabled');
                     }
                 }
                 break;
@@ -1149,10 +1178,9 @@ window.handleServerMessage = function(msg) {
                      // Trigger damage flash effect
                      window.player.damageFlashTimer = 0.3; // Flash for 0.3 seconds
                      
-                     // Reset damage timer to prevent health regeneration when hit
-                     window.player._damageTimer = 0;
-                     window.player._regenActive = false;
-                     console.log('Player hit, health regeneration disabled - health:', window.player.health);
+                    // Reset damage timer to prevent health regeneration when hit
+                    window.player._damageTimer = 0;
+                    window.player._regenActive = false;
                      
                      // Check if player died from this hit
                      if (window.player.health <= 0) {
@@ -1185,6 +1213,14 @@ window.handleServerMessage = function(msg) {
                      } else {
                          console.warn('displayInventoryItems function not available');
                      }
+                     
+                     // Refresh shop if it's currently open to show updated inventory
+                     const shopPanel = document.getElementById('shopPanel');
+                     if (shopPanel && shopPanel.style.display === 'block') {
+                         if (typeof window.openShop === 'function') {
+                             window.openShop();
+                         }
+                     }
                  }
                  break;
                          case 'equipmentUpdated':
@@ -1214,6 +1250,14 @@ window.handleServerMessage = function(msg) {
                         window.displayInventoryItems();
                     } else {
                         console.warn('displayInventoryItems function not available');
+                    }
+                    
+                    // Refresh shop if it's currently open to show updated equipment
+                    const shopPanel = document.getElementById('shopPanel');
+                    if (shopPanel && shopPanel.style.display === 'block') {
+                        if (typeof window.openShop === 'function') {
+                            window.openShop();
+                        }
                     }
                 }
                 break;

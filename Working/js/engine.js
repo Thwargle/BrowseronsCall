@@ -933,7 +933,7 @@ function initializeEngine() {
         // Draw equipment for other players (armor, weapons, etc.)
         if (otherPlayer.equip) {
             // Use drawAllEquipment for consistent z-order and no flickering
-            window.drawAllEquipment(ctx, X, Y, otherPlayer.equip, false);
+            window.drawAllEquipment(ctx, X, Y, otherPlayer.equip, false, false);
             // Draw mainhand weapon with swing angle if needed
             if (otherPlayer.equip.mainhand) {
                 const ang = 0; // No swing angle for other players
@@ -944,7 +944,7 @@ function initializeEngine() {
                         window.player._reach = otherPlayer.reach;
                     }
                 }
-                window.drawWeapon(ctx, X, Y, false, otherPlayer.equip.mainhand, ang);
+                window.drawWeapon(ctx, X, Y, false, otherPlayer.equip.mainhand, ang, otherPlayer.equip, 'mainhand');
                 // Restore original reach
                 if (window.player) {
                     window.player._reach = originalReach;
@@ -1009,11 +1009,11 @@ function initializeEngine() {
         } 
         if (window.equip) {
             // Use drawAllEquipment for consistent z-order and no flickering
-            window.drawAllEquipment(ctx,X,Y,window.equip,true);
-            // Draw mainhand weapon with swing angle if needed
+            window.drawAllEquipment(ctx,X,Y,window.equip,true,flip);
+            // Draw mainhand weapon with swing angle if needed (drawn last so it appears on top)
             if (window.equip.mainhand) {
                 const ang = (opts.swingAngle||0); 
-                window.drawWeapon(ctx,X,Y,flip,window.equip.mainhand,ang);
+                window.drawWeapon(ctx,X,Y,flip,window.equip.mainhand,ang,window.equip,'mainhand');
                 
                 // Draw attack range indicator when attacking
                 if (opts.swingAngle !== undefined && opts.swingAngle !== 0) {
@@ -1594,9 +1594,11 @@ function initializeEngine() {
                     // Hit remote (server) enemies
                     for (const e of window.remoteEnemies.values()){ 
                         // Calculate player attack origin based on facing direction
+                        // Attack point should be at the weapon tip
+                        const reach = window.player._reach || 60;
                         const playerAttackX = window.player.facing > 0 ? 
-                            window.player.x + window.player.w : // Right side when facing right
-                            window.player.x; // Left side when facing left
+                            window.player.x + window.player.w + reach : // Right side + reach when facing right
+                            window.player.x - reach; // Left side - reach when facing left
                         
                         const dx=( (e.x||0)+24 )-playerAttackX; 
                         const dy=( (e.y||0)+32 )-(window.player.y+window.player.h/2); 
@@ -1623,9 +1625,11 @@ function initializeEngine() {
                         }
                         
                         // Calculate player attack origin based on facing direction
+                        // Attack point should be at the weapon tip
+                        const reach = window.player._reach || 60;
                         const playerAttackX = window.player.facing > 0 ? 
-                            window.player.x + window.player.w : // Right side when facing right
-                            window.player.x; // Left side when facing left
+                            window.player.x + window.player.w + reach : // Right side + reach when facing right
+                            window.player.x - reach; // Left side - reach when facing left
                         
                         const dx=(e.x+e.w/2)-playerAttackX; 
                         const dy=(e.y+e.h/2)-(window.player.y+window.player.h/2); 
@@ -1705,14 +1709,42 @@ function initializeEngine() {
         
         // Render portals
         if (window.gameState && window.gameState.portals) {
+            // Maintain persistent portal objects to preserve rotation state
+            if (!window.portalObjects) {
+                window.portalObjects = new Map();
+            }
+            
             for (const portal of window.gameState.portals) {
                 if (window.Portal) {
-                    // Ensure portal has proper dimensions
-                    const portalObj = new window.Portal(portal.id, portal.x, portal.y, portal.targetLevel);
-                    portalObj.w = portal.w || portal.width || 64;
-                    portalObj.h = portal.h || portal.height || 64;
+                    // Get or create portal object
+                    let portalObj = window.portalObjects.get(portal.id);
+                    if (!portalObj) {
+                        portalObj = new window.Portal(portal.id, portal.x, portal.y, portal.targetLevel);
+                        portalObj.w = portal.w || portal.width || 64;
+                        portalObj.h = portal.h || portal.height || 64;
+                        window.portalObjects.set(portal.id, portalObj);
+                    } else {
+                        // Update position and size from server data (in case it changed)
+                        portalObj.x = portal.x;
+                        portalObj.y = portal.y;
+                        portalObj.w = portal.w || portal.width || 64;
+                        portalObj.h = portal.h || portal.height || 64;
+                        if (portal.targetLevel) {
+                            portalObj.targetLevel = portal.targetLevel;
+                        }
+                    }
+                    
+                    // Update rotation and animation
                     portalObj.update(dt);
                     portalObj.draw(currentCtx);
+                }
+            }
+            
+            // Clean up portal objects that no longer exist
+            const activePortalIds = new Set(window.gameState.portals.map(p => p.id));
+            for (const [id, portalObj] of window.portalObjects.entries()) {
+                if (!activePortalIds.has(id)) {
+                    window.portalObjects.delete(id);
                 }
             }
         }
@@ -1856,7 +1888,6 @@ function initializeEngine() {
                     r2._damageTimer=31; 
                     r2.update(1.0); 
                     const g2=r2.health-(r1.maxHealth-50);
-                    console.log('[test] regen step at 30 Endurance', g2>g1);
                 }
             }catch(e){ 
                 console.warn('tests skipped',e);

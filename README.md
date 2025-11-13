@@ -46,6 +46,14 @@ A comprehensive multiplayer 2D RPG game built with Node.js, WebSockets, and HTML
 - **Game Engine** (`Working/js/engine.js`): Rendering, input handling, and game loop
 - **UI Management** (`Working/js/ui.js`): Inventory, tooltips, and drag-and-drop
 - **Game Logic** (`Working/js/methods.js`): Item generation, physics, and entity classes
+- **Equipment System** (`Working/js/equipment.js`): Equipment management, equipping/unequipping, and server synchronization
+
+### Server-Side Modules
+- **Player Management** (`Working/js/player.js`): Player data persistence, death messages, and data file management
+- **Enemy System** (`Working/js/enemy.js`): Enemy creation, AI behavior, and NPC color generation
+- **Loot System** (`Working/js/loot.js`): Item generation, loot tables, and item creation
+- **Rarity System** (`Working/js/rarity.js`): Rarity determination and stat bonuses
+- **Level Loader** (`Working/js/level-loader.js`): Level file loading and management
 
 ### Key Systems
 - **Inventory System**: Drag-and-drop between bag, equipment, and world
@@ -123,6 +131,31 @@ Runs with nodemon for automatic server restart on file changes.
 - **F**: Open shop (when near vendor)
 - **Enter**: Focus chat input
 - **Escape**: Various UI actions
+
+## Level Editor
+
+The game includes a built-in level editor for creating custom levels.
+
+### Accessing the Level Editor
+- Click the "🎨 Level Editor" link on the connection screen
+- Or navigate directly to `/level-editor.html`
+
+### Features
+- **Floor Materials**: Place dirt, grass, stone, sand, and water tiles
+- **Objects**: Place vendors, enemy spawners, and portals
+- **Spawner Configuration**: Configure enemy types, respawn times, and visibility ranges
+- **Portal Configuration**: Set up portals to other levels
+- **Save/Load**: Save levels as JSON files and load them in-game
+- **Undo System**: Undo recent changes (Ctrl+Z)
+- **Zoom Controls**: Zoom in/out for detailed editing
+- **Grid System**: Visual grid for precise placement
+
+### Level Editor Controls
+- **Left-click**: Place objects/tiles
+- **Right-click**: Erase objects/tiles
+- **Space + Drag**: Pan view
+- **Mouse Wheel**: Zoom in/out
+- **Select Tool**: Click objects to edit their properties
 
 ## Multiplayer Setup
 
@@ -237,14 +270,28 @@ ip addr
 ```
 ├── Working/
 │   ├── Index.html          # Main game interface
+│   ├── level-editor.html   # Level editor interface
+│   ├── assets/             # Game assets (weapons, wands)
+│   ├── levels/             # Level JSON files
+│   ├── player_data/        # Player save files (JSON)
 │   └── js/
 │       ├── server.js       # Main server logic
 │       ├── network.js      # Client networking
 │       ├── engine.js       # Game engine and rendering
-│       ├── ui.js          # User interface management
-│       └── methods.js     # Helper functions and classes
+│       ├── ui.js           # User interface management
+│       ├── methods.js      # Helper functions and classes
+│       ├── equipment.js    # Equipment management system
+│       ├── player.js       # Player data management
+│       ├── enemy.js        # Enemy system and AI
+│       ├── loot.js         # Loot and item generation
+│       ├── rarity.js       # Rarity system
+│       ├── level-loader.js # Level file loading
+│       └── level-editor.js # Level editor functionality
+├── generate-certs.ps1      # SSL certificate generator (HTTPS)
 ├── package.json            # Dependencies and scripts
-└── README.md              # This file
+├── README.md               # This file
+├── checklist.md            # Feature checklist
+└── HTTPS-SOLUTION.md       # HTTPS setup guide
 ```
 
 ### Key Development Concepts

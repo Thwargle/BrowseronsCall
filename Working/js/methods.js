@@ -81,16 +81,34 @@ window.placeVendor=function(){
 }
 
 // naming / rarities
-window.RARITIES=['Common','Uncommon','Epic','Legendary'];
-window.RARITY_CLASS={ 'Common':'r-common','Uncommon':'r-uncommon','Epic':'r-epic','Legendary':'r-legendary' };
+window.RARITIES=['Common','Uncommon','Rare','Epic','Legendary'];
+window.RARITY_CLASS={ 'Common':'r-common','Uncommon':'r-uncommon','Rare':'r-rare','Epic':'r-epic','Legendary':'r-legendary' };
 window.STAT_NAMES=['Strength','Endurance','Quickness','Coordination','Focus','Health','Stamina','Mana'];
 const namePrefixes=['Worn','Ancient','Copper','Iron','Glinting','Shadow','Brass','Elder'];
-const weaponNames=['Blade','Sword','Dagger','Axe','Saber','Mace','Spear','Hammer','Bow','Crossbow','Staff','Wand','Katana','Rapier','Warhammer','Battleaxe','Halberd'];
+// Updated weapon names with better distribution across damage types
+const weaponNames=[
+    // Slashing
+    'Blade','Sword','Axe','Saber','Katana','Battleaxe','Halberd','Scimitar','Longsword','Greatsword',
+    // Bludgeoning
+    'Mace','Hammer','Warhammer','Club','Maul','Flail',
+    // Piercing
+    'Dagger','Spear','Rapier','Bow','Crossbow','Javelin','Trident',
+    // Magic
+    'Staff','Wand'
+];
 window.armorSlotName={ head:['Helmet','Cap','Helm','Crown','Circlet'], chest:['Cuirass','Chestplate','Tunic','Robe','Vest'], legs:['Greaves','Leggings','Pants','Chausses','Breeches'], feet:['Boots','Sabatons','Shoes','Sandals','Greaves'], hands:['Gauntlets','Gloves','Mittens'], wrists:['Bracers','Wristguards','Vambraces'], waist:['Belt','Girdle','Sash'], neck:['Amulet','Pendant','Collar'], shoulders:['Pauldrons','Shoulderpads','Mantle'] };
 const nameSuffixes=['of Healing','of Quickness','of Might','of Focus','of the Fox','of Fortitude','of Sparks'];
 window.weaponKindFromName=function(name){ 
     if(!name) return null; 
     const n=name.toLowerCase(); 
+    // Check in order of specificity (longer/more specific names first)
+    if(n.includes('warhammer')) return 'Warhammer'; 
+    if(n.includes('battleaxe')) return 'Battleaxe'; 
+    if(n.includes('crossbow')) return 'Crossbow'; 
+    if(n.includes('longsword')) return 'Longsword';
+    if(n.includes('greatsword')) return 'Greatsword';
+    if(n.includes('scimitar')) return 'Scimitar';
+    if(n.includes('halberd')) return 'Halberd'; 
     if(n.includes('blade')) return 'Blade'; 
     if(n.includes('sword')) return 'Sword'; 
     if(n.includes('dagger')) return 'Dagger'; 
@@ -100,20 +118,218 @@ window.weaponKindFromName=function(name){
     if(n.includes('spear')) return 'Spear'; 
     if(n.includes('hammer')) return 'Hammer'; 
     if(n.includes('bow')) return 'Bow'; 
-    if(n.includes('crossbow')) return 'Crossbow'; 
     if(n.includes('staff')) return 'Staff'; 
     if(n.includes('wand')) return 'Wand'; 
     if(n.includes('katana')) return 'Katana'; 
     if(n.includes('rapier')) return 'Rapier'; 
-    if(n.includes('warhammer')) return 'Warhammer'; 
-    if(n.includes('battleaxe')) return 'Battleaxe'; 
-    if(n.includes('halberd')) return 'Halberd'; 
+    if(n.includes('club')) return 'Club';
+    if(n.includes('maul')) return 'Maul';
+    if(n.includes('flail')) return 'Flail';
+    if(n.includes('javelin')) return 'Javelin';
+    if(n.includes('trident')) return 'Trident';
+    if(n.includes('pike')) return 'Pike';
     return null; 
 }
 
+// Check if a weapon is two-handed (client-side version)
+window.checkIfTwoHanded = function(itemOrName) {
+    if (!itemOrName) return false;
+    
+    // If it's a string, check directly
+    if (typeof itemOrName === 'string') {
+        const twoHandedWeapons = ['Spear', 'Javelin', 'Trident', 'Pike', 'Staff', 'Halberd', 'Bow', 'Crossbow'];
+        return twoHandedWeapons.includes(itemOrName);
+    }
+    
+    // If it's an item object, check properties
+    if (itemOrName.twoHanded !== undefined) {
+        return itemOrName.twoHanded === true;
+    }
+    
+    if (itemOrName.subtype) {
+        const twoHandedWeapons = ['Spear', 'Javelin', 'Trident', 'Pike', 'Staff', 'Halberd', 'Bow', 'Crossbow'];
+        return twoHandedWeapons.includes(itemOrName.subtype);
+    }
+    
+    if (itemOrName.name) {
+        const weaponKind = window.weaponKindFromName(itemOrName.name);
+        if (weaponKind) {
+            const twoHandedWeapons = ['Spear', 'Javelin', 'Trident', 'Pike', 'Staff', 'Halberd', 'Bow', 'Crossbow'];
+            return twoHandedWeapons.includes(weaponKind);
+        }
+    }
+    
+    return false;
+};
+
 // icon painter
 const ICON_CACHE=new Map(), ICON_IMG_CACHE=new Map();
-function metal(){ return {base:'#d5dceb',edge:'#9eb0c8',hi:'#edf1f8'}; }
+
+// Weapon image cache
+const WEAPON_IMAGE_CACHE = new Map();
+const WAND_IMAGE_CACHE = new Map();
+
+// Function to load weapon image
+function loadWeaponImage(weaponType, item = null) {
+    // Use item level or hash of item name to determine variant
+    let variantNum = 1;
+    let variantHash = 0;
+    
+    if (item && typeof item === 'object') {
+        variantNum = item.level || 1;
+        // Hash item name for consistent variant selection
+        if (item.name) {
+            for (let i = 0; i < item.name.length; i++) {
+                variantHash += item.name.charCodeAt(i);
+            }
+        }
+    } else if (typeof item === 'number') {
+        variantNum = item;
+    }
+    
+    const cacheKey = `${weaponType}_${variantNum}_${variantHash}`;
+    
+    // Check if already cached
+    if (WEAPON_IMAGE_CACHE.has(cacheKey)) {
+        const cached = WEAPON_IMAGE_CACHE.get(cacheKey);
+        if (cached && cached.complete && cached.naturalWidth > 0) {
+            return cached;
+        }
+    }
+    
+    // Create image path
+    let imagePath = '';
+    let imageName = '';
+    
+    // Map weapon types to image files
+    const weaponImageMap = {
+        'Sword': 'Sword',
+        'Axe': 'Axe',
+        'Dagger': 'Dagger',
+        'Hammer': 'Hammer',
+        'Mace': 'Mace',
+        'Spear': 'Spear',
+        'Bow': 'Bow',
+        'Staff': 'Wand', // Staff uses wand images
+        'Wand': 'Wand', // Wands are in separate folder
+        'Katana': 'Sword', // Use sword images for katana
+        'Rapier': 'Sword', // Use sword images for rapier
+        'Saber': 'Sword', // Use sword images for saber
+        'Blade': 'Sword', // Use sword images for blade
+        'Longsword': 'Sword', // Use sword images for longsword
+        'Greatsword': 'Sword', // Use sword images for greatsword
+        'Scimitar': 'Sword', // Use sword images for scimitar
+        'Warhammer': 'Hammer', // Use hammer images for warhammer
+        'Battleaxe': 'Axe', // Use axe images for battleaxe
+        'Halberd': 'Spear', // Use spear images for halberd
+        'Crossbow': 'Bow', // Use bow images for crossbow
+        'Club': 'Mace', // Use mace images for club
+        'Maul': 'Hammer', // Use hammer images for maul
+        'Flail': 'Mace', // Use mace images for flail
+        'Javelin': 'Spear', // Use spear images for javelin
+        'Trident': 'Spear', // Use spear images for trident
+        'Pike': 'Spear' // Use spear images for pike
+    };
+    
+    const baseType = weaponImageMap[weaponType] || 'Sword';
+    
+    // Handle wands separately (they have color variants)
+    if (baseType === 'Wand' || weaponType === 'Wand' || weaponType === 'Staff') {
+        // For wands, pick a variant based on weapon level or hash of name
+        const wandVariants = ['Red', 'Green', 'Blue'];
+        const colorIndex = variantHash % 3;
+        const wandColor = wandVariants[colorIndex];
+        const wandNumber = ((variantNum - 1) % 13) + 1; // 1-13
+        imageName = `${wandColor}_${wandNumber}.png`;
+        imagePath = `assets/Wands/${imageName}`;
+    } else {
+        // For weapons, select variant based on level
+        // Check if weapon has numbered variants
+        const hasVariants = ['Sword', 'Dagger', 'Spear', 'Bow', 'Mace', 'Hammer'].includes(baseType);
+        
+        if (hasVariants) {
+            // Use level to select variant, with some randomization
+            const variantSelect = ((variantNum - 1) + (variantHash % 3)) % 14 + 1; // 1-14 for swords, adjust for others
+            if (baseType === 'Sword') {
+                imageName = variantSelect <= 14 ? `Sword_${Math.min(variantSelect, 14)}.png` : 'Sword_1.png';
+            } else if (baseType === 'Dagger') {
+                imageName = variantSelect <= 5 ? `Dagger_${Math.min(variantSelect, 5)}.png` : 'Dagger_1.png';
+            } else if (baseType === 'Spear') {
+                imageName = variantSelect <= 5 ? `Spear_${Math.min(variantSelect, 5)}.png` : 'Spear_1.png';
+            } else if (baseType === 'Bow') {
+                imageName = variantSelect <= 4 ? `Bow_${Math.min(variantSelect, 4)}.png` : 'Bow_1.png';
+            } else if (baseType === 'Mace') {
+                imageName = variantSelect <= 3 ? `Mace_${Math.min(variantSelect, 3)}.png` : 'Mace_1.png';
+            } else if (baseType === 'Hammer') {
+                imageName = variantSelect <= 2 ? `Hammer_${Math.min(variantSelect, 2)}.png` : 'Hammer_1.png';
+            } else {
+                imageName = `${baseType}.png`;
+            }
+        } else {
+            imageName = `${baseType}.png`;
+        }
+        
+        imagePath = `assets/Weapons/${imageName}`;
+    }
+    
+    const img = new Image();
+    img.src = imagePath;
+    img.onerror = () => {
+        // Fallback to rectangle if image fails to load
+        WEAPON_IMAGE_CACHE.set(cacheKey, null);
+    };
+    WEAPON_IMAGE_CACHE.set(cacheKey, img);
+    WAND_IMAGE_CACHE.set(cacheKey, img); // Also cache in wand cache for wands
+    return img;
+}
+
+// Preload common weapon images
+function preloadWeaponImages() {
+    const commonWeapons = ['Sword', 'Axe', 'Dagger', 'Hammer', 'Mace', 'Spear', 'Bow'];
+    commonWeapons.forEach(weapon => {
+        // Preload a few variants
+        for (let i = 1; i <= 3; i++) {
+            loadWeaponImage(weapon, i);
+        }
+    });
+    
+    // Preload some wand variants
+    for (let i = 1; i <= 5; i++) {
+        loadWeaponImage('Wand', { level: i, name: `Wand_${i}` });
+        loadWeaponImage('Staff', { level: i, name: `Staff_${i}` });
+    }
+}
+
+// Initialize weapon image preloading when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', preloadWeaponImages);
+} else {
+    preloadWeaponImages();
+}
+function metal(rarity = 'Common'){ 
+    // Standard metal color (not rarity-based)
+    return {base:'#d5dceb',edge:'#9eb0c8',hi:'#edf1f8'}; // Silver metal
+}
+
+// Get weapon color based on elemental type
+function getWeaponColor(elementalType) {
+    if (!elementalType) {
+        return {base:'#d5dceb',edge:'#9eb0c8',hi:'#edf1f8'}; // Default silver
+    }
+    
+    switch(elementalType) {
+        case 'Fire':
+            return {base:'#ff6347',edge:'#ff4500',hi:'#ffd700'}; // Red-orange with gold highlights
+        case 'Acid':
+            return {base:'#32cd32',edge:'#228b22',hi:'#90ee90'}; // Green
+        case 'Lightning':
+            return {base:'#87ceeb',edge:'#4682b4',hi:'#ffffff'}; // Sky blue with white highlights
+        case 'Frost':
+            return {base:'#b0e0e6',edge:'#4682b4',hi:'#e0f6ff'}; // Light blue/cyan
+        default:
+            return {base:'#d5dceb',edge:'#9eb0c8',hi:'#edf1f8'}; // Default silver
+    }
+}
 function leather(){ return {base:'#a57544',edge:'#6b4423',hi:'#c9925f'}; }
 function cloth(){ return {base:'#6ea2d6',edge:'#3d688d',hi:'#9bc4ed'}; }
 function special(){ return {base:'#8b5cf6',edge:'#6d28d9',hi:'#a78bfa'}; }
@@ -121,7 +337,14 @@ function dragonhide(){ return {base:'#dc2626',edge:'#991b1b',hi:'#ef4444'}; }
 function shadowweave(){ return {base:'#1f2937',edge:'#111827',hi:'#374151'}; }
 function celestial(){ return {base:'#fbbf24',edge:'#d97706',hi:'#fcd34d'}; }
 function voidTouched(){ return {base:'#7c3aed',edge:'#5b21b6',hi:'#a78bfa'}; }
-function rarityFrame(g,rar){ g.fillStyle = rar==='Legendary'? '#ff9a1c' : rar==='Epic'? '#b37bff' : rar==='Uncommon'? '#3da5ff' : '#ffffff'; g.fillRect(0,0,64,64); }
+function rarityFrame(g,rar){ 
+    if(rar==='Legendary') g.fillStyle = '#ff9a1c';
+    else if(rar==='Epic') g.fillStyle = '#b37bff';
+    else if(rar==='Rare') g.fillStyle = '#3da5ff'; // Blue for Rare
+    else if(rar==='Uncommon') g.fillStyle = '#4caf50'; // Green for Uncommon
+    else g.fillStyle = '#ffffff'; // Common - white
+    g.fillRect(0,0,64,64); 
+}
 function shade(g,x,y,w,h,base,edge){ g.fillStyle=base; g.fillRect(x,y,w,h); g.fillStyle=edge; g.fillRect(x,y,w,2); g.fillRect(x,y,2,h); }
 function outline(g,x,y,w,h,color){ g.strokeStyle=color; g.lineWidth=2; g.strokeRect(x+0.5,y+0.5,w-1,h-1); }
 function drawIcon(it){ 
@@ -150,25 +373,60 @@ function drawIcon(it){
         
         if(it.type==='weapon'){
             const kind=weaponKindFromName(it.name)||it.subtype||'melee'; 
-            const m=metal(r);
-            if(kind==='Blade'){ shade(g,30,10,6,40,m.base,m.edge); g.fillStyle=m.hi; g.fillRect(32,12,2,36); g.fillStyle=m.base; g.fillRect(24,40,18,4); g.fillRect(28,36,10,4); outline(g,22,8,20,46,'#1b2430'); }
-            else if(kind==='Sword'){ shade(g,30,16,6,30,m.base,m.edge); g.fillStyle=m.hi; g.fillRect(32,18,2,26); g.fillStyle=m.base; g.fillRect(26,40,14,4); g.fillRect(29,36,8,4); outline(g,24,14,18,34,'#1b2430'); }
-            else if(kind==='Dagger'){ shade(g,32,22,4,18,m.base,m.edge); g.fillStyle=m.hi; g.fillRect(33,24,2,14); g.fillStyle=m.base; g.fillRect(28,36,12,4); outline(g,26,20,20,22,'#1b2430'); }
-            else if(kind==='Axe'){ shade(g,30,20,6,26,m.base,m.edge); g.fillStyle=m.base; g.fillRect(18,18,18,12); g.fillRect(20,30,16,8); g.fillStyle=m.hi; g.fillRect(20,20,8,2); outline(g,16,16,24,24,'#1b2430'); }
-            else if(kind==='Saber'){ shade(g,30,14,6,34,m.base,m.edge); g.fillStyle=m.hi; g.fillRect(32,16,2,30); g.fillStyle=m.base; g.fillRect(24,40,18,3); outline(g,22,12,22,36,'#1b2430'); }
-            else if(kind==='Mace'){ shade(g,30,18,6,28,m.base,m.edge); g.fillStyle=m.hi; g.beginPath(); g.arc(33,16,6,0,Math.PI*2); g.fill(); outline(g,24,12,18,36,'#1b2430'); }
-            else if(kind==='Spear'){ shade(g,30,10,6,40,m.base,m.edge); g.fillStyle=m.hi; g.fillRect(32,12,2,36); g.beginPath(); g.moveTo(33,6); g.lineTo(40,14); g.lineTo(26,14); g.closePath(); g.fill(); outline(g,24,8,18,44,'#1b2430'); }
-            else if(kind==='Hammer'){ shade(g,30,18,6,28,m.base,m.edge); g.fillStyle=m.hi; g.beginPath(); g.arc(33,16,6,0,Math.PI*2); g.fill(); g.fillStyle=m.base; g.fillRect(28,40,10,4); outline(g,24,12,18,36,'#1b2430'); }
-            else if(kind==='Bow'){ shade(g,30,16,6,30,m.base,m.edge); g.fillStyle=m.hi; g.beginPath(); g.arc(33,16,12,0,Math.PI*2); g.stroke(); g.fillStyle=m.base; g.fillRect(24,40,18,4); outline(g,22,12,22,36,'#1b2430'); }
-            else if(kind==='Crossbow'){ shade(g,30,16,6,30,m.base,m.edge); g.fillStyle=m.hi; g.fillRect(32,18,2,26); g.fillStyle=m.base; g.fillRect(18,40,28,4); g.fillRect(20,36,24,4); outline(g,16,12,28,36,'#1b2430'); }
-            else if(kind==='Staff'){ shade(g,30,10,6,40,m.base,m.edge); g.fillStyle=m.hi; g.fillRect(32,12,2,36); g.fillStyle=m.base; g.fillRect(24,40,18,4); g.fillRect(28,36,10,4); outline(g,22,8,20,46,'#1b2430'); }
-            else if(kind==='Wand'){ shade(g,32,20,4,20,m.base,m.edge); g.fillStyle=m.hi; g.fillRect(33,22,2,16); g.fillStyle=m.base; g.fillRect(28,40,12,4); outline(g,26,18,20,26,'#1b2430'); }
-            else if(kind==='Katana'){ shade(g,30,14,6,34,m.base,m.edge); g.fillStyle=m.hi; g.fillRect(32,16,2,30); g.fillStyle=m.base; g.fillRect(24,40,18,3); outline(g,22,12,22,36,'#1b2430'); }
-            else if(kind==='Rapier'){ shade(g,30,14,6,34,m.base,m.edge); g.fillStyle=m.hi; g.fillRect(32,16,2,30); g.fillStyle=m.base; g.fillRect(24,40,18,3); outline(g,22,12,22,36,'#1b2430'); }
-            else if(kind==='Warhammer'){ shade(g,30,18,6,28,m.base,m.edge); g.fillStyle=m.hi; g.beginPath(); g.arc(33,16,6,0,Math.PI*2); g.fill(); g.fillStyle=m.base; g.fillRect(28,40,10,4); outline(g,24,12,18,36,'#1b2430'); }
-            else if(kind==='Battleaxe'){ shade(g,30,20,6,26,m.base,m.edge); g.fillStyle=m.base; g.fillRect(18,18,18,12); g.fillRect(20,30,16,8); g.fillStyle=m.hi; g.fillRect(20,20,8,2); outline(g,16,16,24,24,'#1b2430'); }
-            else if(kind==='Halberd'){ shade(g,30,10,6,40,m.base,m.edge); g.fillStyle=m.hi; g.fillRect(32,12,2,36); g.fillStyle=m.base; g.fillRect(18,40,28,4); g.fillRect(20,36,24,4); outline(g,16,8,28,44,'#1b2430'); }
-            else { shade(g,30,14,6,34,m.base,m.edge); outline(g,24,12,18,38,'#1b2430'); }
+            
+            // Try to use weapon image for icon
+            const weaponImg = loadWeaponImage(kind, it);
+            let imageDrawn = false;
+            
+            if (weaponImg && weaponImg.complete && weaponImg.naturalWidth > 0) {
+                // Draw weapon image scaled to fit icon (64x64 with 4px padding = 56x56)
+                const imgWidth = weaponImg.naturalWidth;
+                const imgHeight = weaponImg.naturalHeight;
+                const maxDim = Math.max(imgWidth, imgHeight);
+                const scale = 48 / maxDim; // Scale to fit in 48x48 area (with some padding)
+                const scaledWidth = imgWidth * scale;
+                const scaledHeight = imgHeight * scale;
+                
+                // Center the image in the icon
+                const iconX = 32 - scaledWidth / 2;
+                const iconY = 32 - scaledHeight / 2;
+                
+                // Draw with rotation if needed (for vertical weapons)
+                g.save();
+                g.translate(32, 32);
+                if (imgHeight > imgWidth) {
+                    // Vertical weapon, rotate 90 degrees
+                    g.rotate(Math.PI / 2);
+                }
+                g.drawImage(weaponImg, -scaledWidth / 2, -scaledHeight / 2, scaledWidth, scaledHeight);
+                g.restore();
+                imageDrawn = true;
+            }
+            
+            // Fallback to rectangle drawing if image not available
+            if (!imageDrawn) {
+                // Use elemental color instead of rarity
+                const elementalType = it.elementalDamageType;
+                const m = getWeaponColor(elementalType);
+                if(kind==='Blade'){ shade(g,30,10,6,40,m.base,m.edge); g.fillStyle=m.hi; g.fillRect(32,12,2,36); g.fillStyle=m.base; g.fillRect(24,40,18,4); g.fillRect(28,36,10,4); outline(g,22,8,20,46,'#1b2430'); }
+                else if(kind==='Sword'){ shade(g,30,16,6,30,m.base,m.edge); g.fillStyle=m.hi; g.fillRect(32,18,2,26); g.fillStyle=m.base; g.fillRect(26,40,14,4); g.fillRect(29,36,8,4); outline(g,24,14,18,34,'#1b2430'); }
+                else if(kind==='Dagger'){ shade(g,32,22,4,18,m.base,m.edge); g.fillStyle=m.hi; g.fillRect(33,24,2,14); g.fillStyle=m.base; g.fillRect(28,36,12,4); outline(g,26,20,20,22,'#1b2430'); }
+                else if(kind==='Axe'){ shade(g,30,20,6,26,m.base,m.edge); g.fillStyle=m.base; g.fillRect(18,18,18,12); g.fillRect(20,30,16,8); g.fillStyle=m.hi; g.fillRect(20,20,8,2); outline(g,16,16,24,24,'#1b2430'); }
+                else if(kind==='Saber'){ shade(g,30,14,6,34,m.base,m.edge); g.fillStyle=m.hi; g.fillRect(32,16,2,30); g.fillStyle=m.base; g.fillRect(24,40,18,3); outline(g,22,12,22,36,'#1b2430'); }
+                else if(kind==='Mace'){ shade(g,30,18,6,28,m.base,m.edge); g.fillStyle=m.hi; g.beginPath(); g.arc(33,16,6,0,Math.PI*2); g.fill(); outline(g,24,12,18,36,'#1b2430'); }
+                else if(kind==='Spear'){ shade(g,30,10,6,40,m.base,m.edge); g.fillStyle=m.hi; g.fillRect(32,12,2,36); g.beginPath(); g.moveTo(33,6); g.lineTo(40,14); g.lineTo(26,14); g.closePath(); g.fill(); outline(g,24,8,18,44,'#1b2430'); }
+                else if(kind==='Hammer'){ shade(g,30,18,6,28,m.base,m.edge); g.fillStyle=m.hi; g.beginPath(); g.arc(33,16,6,0,Math.PI*2); g.fill(); g.fillStyle=m.base; g.fillRect(28,40,10,4); outline(g,24,12,18,36,'#1b2430'); }
+                else if(kind==='Bow'){ shade(g,30,16,6,30,m.base,m.edge); g.fillStyle=m.hi; g.beginPath(); g.arc(33,16,12,0,Math.PI*2); g.stroke(); g.fillStyle=m.base; g.fillRect(24,40,18,4); outline(g,22,12,22,36,'#1b2430'); }
+                else if(kind==='Crossbow'){ shade(g,30,16,6,30,m.base,m.edge); g.fillStyle=m.hi; g.fillRect(32,18,2,26); g.fillStyle=m.base; g.fillRect(18,40,28,4); g.fillRect(20,36,24,4); outline(g,16,12,28,36,'#1b2430'); }
+                else if(kind==='Staff'){ shade(g,30,10,6,40,m.base,m.edge); g.fillStyle=m.hi; g.fillRect(32,12,2,36); g.fillStyle=m.base; g.fillRect(24,40,18,4); g.fillRect(28,36,10,4); outline(g,22,8,20,46,'#1b2430'); }
+                else if(kind==='Wand'){ shade(g,32,20,4,20,m.base,m.edge); g.fillStyle=m.hi; g.fillRect(33,22,2,16); g.fillStyle=m.base; g.fillRect(28,40,12,4); outline(g,26,18,20,26,'#1b2430'); }
+                else if(kind==='Katana'){ shade(g,30,14,6,34,m.base,m.edge); g.fillStyle=m.hi; g.fillRect(32,16,2,30); g.fillStyle=m.base; g.fillRect(24,40,18,3); outline(g,22,12,22,36,'#1b2430'); }
+                else if(kind==='Rapier'){ shade(g,30,14,6,34,m.base,m.edge); g.fillStyle=m.hi; g.fillRect(32,16,2,30); g.fillStyle=m.base; g.fillRect(24,40,18,3); outline(g,22,12,22,36,'#1b2430'); }
+                else if(kind==='Warhammer'){ shade(g,30,18,6,28,m.base,m.edge); g.fillStyle=m.hi; g.beginPath(); g.arc(33,16,6,0,Math.PI*2); g.fill(); g.fillStyle=m.base; g.fillRect(28,40,10,4); outline(g,24,12,18,36,'#1b2430'); }
+                else if(kind==='Battleaxe'){ shade(g,30,20,6,26,m.base,m.edge); g.fillStyle=m.base; g.fillRect(18,18,18,12); g.fillRect(20,30,16,8); g.fillStyle=m.hi; g.fillRect(20,20,8,2); outline(g,16,16,24,24,'#1b2430'); }
+                else if(kind==='Halberd'){ shade(g,30,10,6,40,m.base,m.edge); g.fillStyle=m.hi; g.fillRect(32,12,2,36); g.fillStyle=m.base; g.fillRect(18,40,28,4); g.fillRect(20,36,24,4); outline(g,16,8,28,44,'#1b2430'); }
+                else { shade(g,30,14,6,34,m.base,m.edge); outline(g,24,12,18,38,'#1b2430'); }
+            }
         } else if(it.type==='armor'){
             const slot=it.slot; 
             // Determine material based on name
@@ -356,6 +614,26 @@ function computeItemValue(level, rarity, stats){ const base = Math.max(1, level*
 window.computeItemValue=computeItemValue;
 window.randId=function(){return Math.random().toString(36).slice(2,9)}
 
+// Helper function to determine damage type from weapon subtype
+function determinePhysicalDamageTypeFromSubtype(subtype) {
+    if (!subtype) return 'Slashing';
+    
+    const subtypeUpper = subtype.charAt(0).toUpperCase() + subtype.slice(1).toLowerCase();
+    
+    // Bludgeoning weapons
+    const bludgeoningWeapons = ['Mace', 'Hammer', 'Warhammer', 'Club', 'Maul', 'Flail'];
+    if (bludgeoningWeapons.includes(subtypeUpper) || bludgeoningWeapons.some(w => subtype.toLowerCase().includes(w.toLowerCase()))) {
+        return 'Bludgeoning';
+    }
+    // Piercing weapons
+    const piercingWeapons = ['Dagger', 'Rapier', 'Spear', 'Bow', 'Crossbow', 'Javelin', 'Trident', 'Pike'];
+    if (piercingWeapons.includes(subtypeUpper) || piercingWeapons.some(w => subtype.toLowerCase().includes(w.toLowerCase()))) {
+        return 'Piercing';
+    }
+    // Default to slashing (includes Sword, Axe, Katana, Battleaxe, Halberd, Scimitar, Longsword, Greatsword, Staff, Wand, etc.)
+    return 'Slashing';
+}
+
 // Normalize items to ensure consistent structure for both local and server items
 window.normalizeItem = function(item) {
     if (!item) return null;
@@ -377,7 +655,44 @@ window.normalizeItem = function(item) {
     if (item.type === 'weapon') {
         normalized.dmgMin = item.dmgMin || 1;
         normalized.dmgMax = item.dmgMax || 2;
+        // Try to preserve subtype, or infer it from name
         normalized.subtype = item.subtype || window.weaponKindFromName(item.name);
+        
+        // Preserve damage types - prioritize existing physicalDamageType
+        if (item.physicalDamageType) {
+            normalized.physicalDamageType = item.physicalDamageType;
+        } else if (normalized.subtype) {
+            // Infer from subtype if physicalDamageType is missing
+            const inferredType = determinePhysicalDamageTypeFromSubtype(normalized.subtype);
+            normalized.physicalDamageType = inferredType;
+            console.log(`[normalizeItem] Weapon "${item.name}" missing physicalDamageType, inferred ${inferredType} from subtype "${normalized.subtype}"`);
+        } else if (item.name) {
+            // Last resort: try to infer from name directly
+            const weaponType = window.weaponKindFromName(item.name);
+            if (weaponType) {
+                normalized.subtype = weaponType;
+                normalized.physicalDamageType = determinePhysicalDamageTypeFromSubtype(weaponType);
+                console.log(`[normalizeItem] Weapon "${item.name}" inferred subtype "${weaponType}" and damage type "${normalized.physicalDamageType}" from name`);
+            } else {
+                normalized.physicalDamageType = 'Slashing'; // Absolute last resort
+                console.warn(`[normalizeItem] Weapon "${item.name}" could not determine damage type, defaulting to Slashing`);
+            }
+        } else {
+            normalized.physicalDamageType = 'Slashing'; // Absolute last resort
+        }
+        normalized.elementalDamageType = item.elementalDamageType !== undefined ? item.elementalDamageType : null;
+        // Set twoHanded property if not already set
+        if (normalized.twoHanded === undefined && normalized.subtype) {
+            if (typeof window.checkIfTwoHanded === 'function') {
+                normalized.twoHanded = window.checkIfTwoHanded(normalized.subtype);
+            } else {
+                // Fallback: check against known two-handed weapons
+                const twoHandedWeapons = ['Spear', 'Javelin', 'Trident', 'Pike', 'Staff', 'Halberd', 'Bow', 'Crossbow'];
+                normalized.twoHanded = twoHandedWeapons.includes(normalized.subtype);
+            }
+        } else if (normalized.twoHanded === undefined) {
+            normalized.twoHanded = false; // Default to one-handed if can't determine
+        }
     } else if (item.type === 'armor') {
         normalized.slot = item.slot || 'chest';
     } else if (item.type === 'currency') {
@@ -439,8 +754,46 @@ window.makeItem=function(type,level){
         const subtype = core; 
         const dmgMin=Math.max(1,Math.round((stats['Strength']||1)*1.0)); 
         const dmgMax=dmgMin+randInt(2,6)+level; 
-        const value=computeItemValue(level,rarity,stats); 
-        const item = {id:randId(),name,rarity,short:`${subtype} (L${level})`,type:'weapon',subtype,level,stats,dmgMin,dmgMax,value}; 
+        const value=computeItemValue(level,rarity,stats);
+        
+        // Determine physical damage type based on weapon subtype
+        let physicalDamageType = 'Slashing'; // default
+        if (['Mace', 'Hammer', 'Warhammer', 'Club', 'Maul', 'Flail'].includes(core)) {
+            physicalDamageType = 'Bludgeoning';
+        } else if (['Dagger', 'Rapier', 'Spear', 'Bow', 'Crossbow', 'Javelin', 'Trident', 'Pike'].includes(core)) {
+            physicalDamageType = 'Piercing';
+        }
+        // Staff and Wand default to Slashing but are magic weapons
+        
+        // Determine if weapon should have elemental damage (increased chances for more variety)
+        let elementalDamageType = null;
+        const elementalRoll = Math.random();
+        let elementalChance = 0.25; // Base 25% chance for Common (increased from 10%)
+        if (rarity === 'Legendary') elementalChance = 0.75; // 75% for Legendary (increased from 50%)
+        else if (rarity === 'Epic') elementalChance = 0.60; // 60% for Epic (increased from 40%)
+        else if (rarity === 'Rare') elementalChance = 0.50; // 50% for Rare (increased from 30%)
+        else if (rarity === 'Uncommon') elementalChance = 0.35; // 35% for Uncommon (increased from 20%)
+        
+        if (elementalRoll < elementalChance) {
+            const ELEMENTAL_TYPES = ['Fire', 'Acid', 'Lightning', 'Frost'];
+            elementalDamageType = ELEMENTAL_TYPES[randInt(0, ELEMENTAL_TYPES.length - 1)];
+        }
+        
+        const item = {
+            id:randId(),
+            name,
+            rarity,
+            short:`${subtype} (L${level})`,
+            type:'weapon',
+            subtype,
+            level,
+            stats,
+            dmgMin,
+            dmgMax,
+            value,
+            physicalDamageType: physicalDamageType,
+            elementalDamageType: elementalDamageType
+        }; 
         try {
             item.icon = getItemIconDataURLForItem(item); 
         } catch (error) {
@@ -937,7 +1290,7 @@ window.drawLegs=function(ctx,x,y,it){
 }
 
 // Draw all equipment for a character (for both player and other players)
-window.drawAllEquipment=function(ctx,x,y,equip,isPlayer=false){
+window.drawAllEquipment=function(ctx,x,y,equip,isPlayer=false,flip=false){
     if(!equip) return;
     
     // Draw equipment in proper order (underneath to on top)
@@ -951,8 +1304,24 @@ window.drawAllEquipment=function(ctx,x,y,equip,isPlayer=false){
     if(equip.neck) window.drawNeck(ctx,x,y,equip.neck);
     if(equip.head) window.drawHelmet(ctx,x,y,equip.head);
     
-    // Draw weapons last (on top) - mainhand is drawn separately in drawCharacter for swing angle
-    if(equip.offhand) window.drawWeapon(ctx,x,y,false,equip.offhand);
+    // Draw offhand weapon first (so mainhand appears on top)
+    // Offhand is drawn here so it appears below mainhand when mainhand is drawn in drawCharacter
+    // Don't draw offhand if mainhand is a two-handed weapon (offhand will be the same weapon reference)
+    if(equip.offhand && equip.mainhand) {
+        // Check if offhand is the same weapon as mainhand (two-handed weapon occupying both slots)
+        const isSameWeapon = equip.offhand === equip.mainhand || 
+            (equip.offhand.id && equip.mainhand.id && equip.offhand.id === equip.mainhand.id);
+        const isMainhandTwoHanded = equip.mainhand.twoHanded || 
+            (equip.mainhand.subtype && typeof window.checkIfTwoHanded === 'function' && window.checkIfTwoHanded(equip.mainhand.subtype));
+        
+        // Only draw offhand if it's a different weapon and mainhand is not two-handed
+        if (!isSameWeapon && !isMainhandTwoHanded) {
+            window.drawWeapon(ctx,x,y,flip,equip.offhand,0,equip,'offhand');
+        }
+    } else if(equip.offhand) {
+        // No mainhand, so draw offhand normally
+        window.drawWeapon(ctx,x,y,flip,equip.offhand,0,equip,'offhand');
+    }
 }
 
 // Draw chest armor with proper alignment and expanded colors
@@ -1047,139 +1416,470 @@ window.drawBoots=function(ctx,x,y,it){
 }
 
 // Draw weapon with proper hand alignment and all weapon types
-window.drawWeapon=function(ctx,x,y,flip,it,angle=0){ 
+// equip parameter can be used to determine if this is mainhand or offhand
+window.drawWeapon=function(ctx,x,y,flip,it,angle=0,equip=null,slotHint=null){ 
     if(!it) return; 
     const kind=weaponKindFromName(it.name)||it.subtype; 
     ctx.save(); 
     
-    // Determine which hand to draw the weapon in with proper positioning
-    let px, py;
-    if(it.slot === 'offhand') {
-        // Offhand weapon goes in left hand (character's left, screen right when facing right)
-        // Position at same horizontal as mainhand but 15px lower vertically (increased from 10px)
-        px = flip ? x+8 : x+40; // Same horizontal position as mainhand, moved 10px further from center
-        py = y+43; // 15px lower than mainhand (y+28 + 15)
-    } else {
-        // Mainhand weapon goes in right hand (character's right, screen left when facing right)
-        // Position at the edge of the character, moved 10px further from center
-        px = flip ? x+8 : x+40; // At the edge of the character (x+8 for left edge, x+40 for right edge)
-        py = y+28; // Center of hand zone for proper animation movement
-    }
+    // Get weapon color based on elemental type (not rarity)
+    const elementalType = it.elementalDamageType;
+    const m = getWeaponColor(elementalType);
     
-    ctx.translate(px,py); 
-    ctx.rotate(angle * (flip?-1:1)); 
-    
-    // Get material color based on rarity
-    const r = it.rarity || 'Common';
-    const m = metal(r);
+    // Get animation time for elemental effects
+    const animTime = (Date.now() / 16) % 100; // Animation cycle based on time (16ms = ~60fps)
     
     // Calculate dynamic weapon length based on current attack reach
-    // The weapon should visually extend exactly to the attack range
-    // Convert reach directly to pixels: reach value = weapon length in pixels
     let weaponLength = 70; // Default base length (matches base reach)
-    
     if (window.player && window.player._reach) {
-        // Weapon length directly equals attack reach in pixels
         weaponLength = Math.round(window.player._reach);
+    }
+    
+    // Try to load and draw weapon image
+    let imageDrawn = false;
+    let scaledWidth = 0;
+    let scaledHeight = 0;
+    const weaponImg = loadWeaponImage(kind, it);
+    
+    if (weaponImg && weaponImg.complete && weaponImg.naturalWidth > 0) {
+        // Image is loaded, calculate dimensions
+        const imgWidth = weaponImg.naturalWidth;
+        const imgHeight = weaponImg.naturalHeight;
         
-        // Apply weapon type-specific visual adjustments while maintaining reach-based length
-        if(kind==='Blade'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
-            ctx.fillStyle=m.edge; ctx.fillRect(0,-2,weaponLength,1); 
-        } else if(kind==='Sword'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
-        } else if(kind==='Dagger'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
-        } else if(kind==='Axe'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
-            ctx.fillRect(weaponLength-4,-8,8,12); 
-        } else if(kind==='Spear'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,3); 
-            ctx.beginPath(); ctx.moveTo(weaponLength,-4); ctx.lineTo(weaponLength+6,0); ctx.lineTo(weaponLength,4); ctx.closePath(); ctx.fill(); 
-        } else if(kind==='Mace'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
-            ctx.beginPath(); ctx.arc(weaponLength+2,0,6,0,Math.PI*2); ctx.fill(); 
-        } else if(kind==='Saber'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
-        } else if(kind==='Hammer'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
-            ctx.beginPath(); ctx.arc(weaponLength+2,0,6,0,Math.PI*2); ctx.fill(); 
-        } else if(kind==='Bow'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
-            ctx.beginPath(); ctx.arc(weaponLength,0,12,0,Math.PI*2); ctx.stroke(); 
-        } else if(kind==='Crossbow'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
-            ctx.fillRect(-8,8,weaponLength+16,4); 
-        } else if(kind==='Staff'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
-        } else if(kind==='Wand'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
-        } else if(kind==='Katana'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
-        } else if(kind==='Rapier'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
-        } else if(kind==='Warhammer'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
-            ctx.beginPath(); ctx.arc(weaponLength+2,0,6,0,Math.PI*2); ctx.fill(); 
-        } else if(kind==='Battleaxe'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
-            ctx.fillRect(weaponLength-4,-8,8,12); 
-        } else if(kind==='Halberd'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
-            ctx.fillRect(-8,8,weaponLength+10,4); 
-        } else { 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,weaponLength,4); 
-        }
+        // Scale image to match weapon length
+        // Use the longer dimension to determine scale
+        const maxDim = Math.max(imgWidth, imgHeight);
+        const scale = weaponLength / maxDim;
+        scaledWidth = imgWidth * scale;
+        scaledHeight = imgHeight * scale;
     } else {
-        // Fallback to original fixed lengths if no reach data available
-        if(kind==='Blade'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,22,4); 
-            ctx.fillStyle=m.edge; ctx.fillRect(0,-2,22,1); 
-        } else if(kind==='Sword'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,16,4); 
-        } else if(kind==='Dagger'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,10,4); 
-        } else if(kind==='Axe'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,16,4); 
-            ctx.fillRect(12,-8,8,12); 
-        } else if(kind==='Spear'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,22,3); 
-            ctx.beginPath(); ctx.moveTo(22,-4); ctx.lineTo(28,0); ctx.lineTo(22,4); ctx.closePath(); ctx.fill(); 
-        } else if(kind==='Mace'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,10,4); 
-            ctx.beginPath(); ctx.arc(12,0,6,0,Math.PI*2); ctx.fill(); 
-        } else if(kind==='Saber'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,18,3); 
-        } else if(kind==='Hammer'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,10,4); 
-            ctx.beginPath(); ctx.arc(12,0,6,0,Math.PI*2); ctx.fill(); 
-        } else if(kind==='Bow'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,16,4); 
-            ctx.beginPath(); ctx.arc(16,0,12,0,Math.PI*2); ctx.stroke(); 
-        } else if(kind==='Crossbow'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,16,4); 
-            ctx.fillRect(-8,8,32,4); 
-        } else if(kind==='Staff'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,22,4); 
-        } else if(kind==='Wand'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,8,4); 
-        } else if(kind==='Katana'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,18,3); 
-        } else if(kind==='Rapier'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,18,3); 
-        } else if(kind==='Warhammer'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,10,4); 
-            ctx.beginPath(); ctx.arc(12,0,6,0,Math.PI*2); ctx.fill(); 
-        } else if(kind==='Battleaxe'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,16,4); 
-            ctx.fillRect(12,-8,8,12); 
-        } else if(kind==='Halberd'){ 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,22,4); 
-            ctx.fillRect(-8,8,32,4); 
-        } else { 
-            ctx.fillStyle=m.base; ctx.fillRect(0,-2,16,4); 
+        // Fallback height for rectangle weapons
+        scaledHeight = 4;
+    }
+    
+    // Get mainhand weapon image height for vertical positioning
+    // Offhand will be positioned below mainhand by mainhand's height
+    let mainhandImageHeight = 20; // Default fallback height (reasonable default)
+    
+    // Determine if this is offhand - check slotHint, it.slot, or if it matches equip.offhand
+    let isOffhandForHeightCalc = false;
+    if (slotHint === 'offhand') {
+        isOffhandForHeightCalc = true;
+    } else if (it.slot === 'offhand') {
+        isOffhandForHeightCalc = true;
+    } else if (equip && equip.offhand && (equip.offhand === it || equip.offhand.id === it.id)) {
+        isOffhandForHeightCalc = true;
+    }
+    
+    if (isOffhandForHeightCalc && equip && equip.mainhand) {
+        // This is offhand, get mainhand height for vertical spacing
+        // Use the same weapon length calculation for consistency
+        let mainhandWeaponLength = weaponLength;
+        if (window.player && window.player._reach) {
+            mainhandWeaponLength = Math.round(window.player._reach);
         }
-    } 
+        
+        const mainhandKind = weaponKindFromName(equip.mainhand.name) || equip.mainhand.subtype;
+        const mainhandImg = loadWeaponImage(mainhandKind, equip.mainhand);
+        if (mainhandImg && mainhandImg.complete && mainhandImg.naturalWidth > 0) {
+            const mainhandImgWidth = mainhandImg.naturalWidth;
+            const mainhandImgHeight = mainhandImg.naturalHeight;
+            const mainhandMaxDim = Math.max(mainhandImgWidth, mainhandImgHeight);
+            const mainhandScale = mainhandWeaponLength / mainhandMaxDim;
+            mainhandImageHeight = mainhandImgHeight * mainhandScale;
+        } else {
+            // Image not loaded or not available, use a reasonable estimate
+            // Use a percentage of weapon length or a minimum height
+            mainhandImageHeight = Math.max(mainhandWeaponLength * 0.3, 20);
+        }
+    }
+    
+    // Determine which hand to draw the weapon in with proper positioning
+    // Character is 48px wide (x to x+48)
+    // flip parameter represents player's facing direction: false = facing right, true = facing left
+    // IMPORTANT: When flip=true, drawCharacter already applied: translate(X+W, Y), scale(-1, 1), then X=0, Y=0
+    // So we're in a flipped coordinate system where x=0 is the right edge in world coords
+    let px, py;
+    const W = 48; // Character width
+    const baseVerticalPos = y + 43; // Base vertical position for mainhand
+    
+    // Both weapons align their edges with the player model based on player's facing direction
+    // When flip=false (normal coords): x is the left edge of character, x+W is right edge
+    // When flip=true (flipped coords): after drawCharacter's transform, x=0 is right edge in world, x=W is left edge
+    if (flip) {
+        // Player facing left: coordinate system is flipped by drawCharacter
+        // drawCharacter does: translate(X+W, Y), scale(-1, 1), then X=0, Y=0
+        // So x=0 is the right edge in world coordinates
+        // We want weapons' right edges at player's left edge, but extend further left
+        // In flipped coords, player's left edge is at x=W (which is x=48)
+        // To move weapons 5 pixels to the right in world, decrease x in flipped coords
+        // (smaller x in flipped coords = further right in world)
+        px = W + 15; // Position further left of player's left edge, moved 5px right
+    } else {
+        // Player facing right: normal coordinate system, x is left edge of character
+        // We want weapons' left edges at player's right edge (x+W)
+        // Move weapons 5 more pixels to the right (increase px by 5)
+        px = x + W - 5; // Position 5 pixels to the right of previous position
+    }
+    
+    // Vertical positioning: mainhand is above, offhand is below by mainhand height
+    // Ensure mainhand is always higher (lower y value = higher on screen)
+    // Increase mainhand vertical placement by 16 pixels (move it 16 pixels higher = decrease y by 16)
+    const mainhandVerticalPos = baseVerticalPos - 16; // Mainhand moved 16 pixels higher
+    
+    // Determine if this is offhand weapon - check slotHint first, then it.slot, then check if it matches equip.offhand
+    let isOffhand = false;
+    if (slotHint === 'offhand') {
+        isOffhand = true;
+    } else if (it.slot === 'offhand') {
+        isOffhand = true;
+    } else if (equip && equip.offhand && equip.offhand === it) {
+        isOffhand = true;
+    } else if (equip && equip.offhand && equip.offhand.id === it.id) {
+        isOffhand = true;
+    }
+    
+    if(isOffhand) {
+        // Offhand weapon - positioned exactly 16 pixels lower than mainhand
+        py = mainhandVerticalPos + 16; // Exactly 16 pixels below mainhand
+    } else {
+        // Mainhand weapon - base vertical position moved 16 pixels higher
+        py = mainhandVerticalPos; // Move 16 pixels higher (decrease y)
+    }
+    
+    // Rotation origin should be at the weapon base (handle) closest to the player
+    // When facing right: weapon extends right from base, base is at 0, tip is at +weaponLength
+    // When facing left: weapon extends left (negative width), base is at 0 (closest to player), tip is at -weaponLength
+    
+    // Translate to weapon position
+    ctx.translate(px, py);
+    
+    // Note: The coordinate system is already flipped by drawCharacter if flip=true
+    // When drawCharacter flips, it does: translate(X+W, Y), scale(-1, 1), then X=0, Y=0
+    // So we're already in a flipped coordinate system when flip=true
+    // We need to mirror the image itself, but NOT flip the coordinate system again
+    // To mirror the image, we use negative width in drawImage
+    
+    // Determine if weapon image needs to be mirrored
+    // When facing right (flip=false): normal orientation, no mirror needed
+    // When facing left (flip=true): image needs to be mirrored horizontally
+    const needsImageMirror = flip; // Use player's facing direction directly
+    
+    // Rotation origin: should always be at the base/handle (edge closest to player)
+    // Understanding the flipped coordinate system:
+    // - When flip=true, drawCharacter does: translate(X+W, Y); scale(-1, 1); X=0; Y=0
+    // - This flips the coordinate system horizontally
+    // - In the flipped coordinate system, x increases going left (in world coordinates)
+    // - Visually on screen, x=0 appears on the right side (player's right edge in world)
+    //
+    // When drawing with negative width in a flipped coordinate system:
+    // - Drawing from x=0 with width=-weaponLength extends from 0 to -weaponLength
+    // - In the flipped coords: 0 is on the right (closest to player) = BASE
+    // - -weaponLength is further left (away from player) = TIP
+    // - So rotation should be from 0 (the base/handle closest to player)
+    //
+    // The key insight: In a flipped coordinate system with negative width,
+    // the start position (0) is the RIGHT edge (base), and it extends LEFT to -weaponLength (tip)
+    
+    const rotationOriginX = 0; // Base/handle is always at 0 (right edge, closest to player)
+    
+    // Translate to rotation origin (base/handle)
+    ctx.translate(rotationOriginX, 0);
+    
+    // Apply rotation at the base (rotation origin)
+    // When facing left, we need to reverse the rotation direction so it swings correctly
+    ctx.rotate(angle * (flip ? -1 : 1));
+    
+    // Translate back from rotation origin to drawing position
+    ctx.translate(-rotationOriginX, 0);
+    
+    // Draw weapon image if loaded
+    // When facing right: base at 0, tip at weaponLength (draw from 0 extending right)
+    // When facing left: need to ensure base (handle) is at rotation origin (0)
+    // 
+    // The issue: When using negative width, the image is mirrored, but the x coordinate
+    // is the LEFT edge of the image data (before mirroring). After mirroring with negative width,
+    // that left edge becomes the RIGHT edge visually. So if the handle is at the left edge of
+    // the image data, drawing from 0 with negative width puts the handle at 0 (correct).
+    // But if the handle is at the right edge of the image data, we need to draw from -weaponLength
+    // with positive width, so the handle (right edge) ends up at 0 after mirroring.
+    //
+    // Actually, wait - with negative width, the image is drawn from right to left.
+    // Drawing from x=0 with width=-w means: the RIGHT edge of the image data is at x=0,
+    // and it extends left to x=-w. So if the handle is at the right edge of the image data,
+    // it will be at x=0 (correct for rotation).
+    //
+    // But the user says it's still rotating from the wrong edge. Maybe the issue is that
+    // the weapon images have the handle at the left edge of the image data, not the right?
+    // In that case, we need to draw from weaponLength with positive width, so the handle
+    // (left edge of image data) ends up at 0 after the coordinate system flip.
+    //
+    // Let me try: draw from weaponLength with positive width when facing left
+    // This will position the left edge of the image data at weaponLength
+    // After the coordinate system flip, that left edge appears at the right side
+    // So if the handle is at the left edge of the image, it will be at the right edge visually
+    if (weaponImg && weaponImg.complete && weaponImg.naturalWidth > 0) {
+        if (needsImageMirror) {
+            // Facing left: draw from weaponLength with positive width
+            // This positions the left edge of image data at weaponLength
+            // After coordinate flip, left edge appears at right (closest to player)
+            // So if handle is at left edge of image data, it's at the right edge visually (correct)
+            // But we want rotation at 0, so we need to offset
+            // Actually, let's try drawing normally but offset so base is at 0
+            // If handle is at left edge of image: draw from 0 with positive width, but then offset
+            // Or: draw from -weaponLength with positive width, so left edge is at -weaponLength
+            // After flip, that appears at weaponLength (wrong)
+            //
+            // I think the correct approach: draw from 0 with negative width, but ensure
+            // the image's handle is at the rotation origin. The issue might be that we need
+            // to account for where the handle is in the source image.
+            // For now, let's try drawing from weaponLength with negative width, which puts
+            // the right edge of the image data at weaponLength, extending to 0
+            // Then the base (right edge) is at weaponLength, but we rotate from 0
+            // So we need to draw from 0 with negative width, but offset the image
+            ctx.drawImage(weaponImg, -weaponLength, -scaledHeight / 2, scaledWidth, scaledHeight);
+        } else {
+            // Facing right: normal orientation, draw extending right from base (0)
+            ctx.drawImage(weaponImg, 0, -scaledHeight / 2, scaledWidth, scaledHeight);
+        }
+        imageDrawn = true;
+    } else if (weaponImg && weaponImg.src && !weaponImg.complete) {
+        // Image is loading, draw a placeholder rectangle with proper edge alignment
+        ctx.fillStyle = m.base;
+        if (needsImageMirror) {
+            // Facing left: try drawing from -weaponLength with positive width
+            // This positions left edge at -weaponLength, extending to 0
+            // After flip, left edge appears at weaponLength, right edge at 0
+            // So base (right edge) would be at 0 (correct for rotation)
+            ctx.fillRect(-weaponLength, -2, weaponLength, 4);
+        } else {
+            // Facing right: draw from 0 (base) extending right to weaponLength (tip)
+            ctx.fillRect(0, -2, weaponLength, 4);
+        }
+    }
+    
+    // Fallback to rectangle drawing if image not available
+    if (!imageDrawn) {
+        // Use original rectangle drawing as fallback
+        if (window.player && window.player._reach) {
+            weaponLength = Math.round(window.player._reach);
+        }
+        
+        // Handle edge alignment for rectangle fallback
+        // Rotation origin: base always at 0 (closest edge to player)
+        // When facing right: base at 0, tip at weaponLength
+        // When facing left: base at 0, tip at -weaponLength (using negative width)
+        // The base is always where the weapon attaches to the player
+        let drawX = 0; // Base is always at 0 (rotation origin)
+        let drawWidth = needsImageMirror ? -weaponLength : weaponLength;
+        
+        // Weapon tip calculation
+        // When facing right: drawX=0, drawWidth=weaponLength, tip is at 0+weaponLength = weaponLength
+        // When facing left: drawX=0, drawWidth=-weaponLength, tip is at 0-weaponLength = -weaponLength
+        const weaponTip = drawX + drawWidth; // End of weapon
+        
+        if(kind==='Blade'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(drawX,-2,drawWidth,4); 
+            ctx.fillStyle=m.edge; ctx.fillRect(drawX,-2,drawWidth,1); 
+        } else if(kind==='Sword'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(drawX,-2,drawWidth,4); 
+        } else if(kind==='Dagger'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(drawX,-2,drawWidth,4); 
+        } else if(kind==='Axe'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(drawX,-2,drawWidth,4); 
+            // Axe head at tip of weapon
+            if (needsImageMirror) {
+                ctx.fillRect(weaponTip+4,-8,8,12); // Tip is at weaponTip (negative), so add 4 to get to tip
+            } else {
+                ctx.fillRect(weaponTip-4,-8,8,12); // Tip is at weaponTip, subtract 4 to center
+            }
+        } else if(kind==='Spear'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(drawX,-2,drawWidth,3); 
+            // Spear tip at end of weapon
+            ctx.beginPath(); ctx.moveTo(weaponTip,-4); ctx.lineTo(weaponTip+6,0); ctx.lineTo(weaponTip,4); ctx.closePath(); ctx.fill(); 
+        } else if(kind==='Mace'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(drawX,-2,drawWidth,4); 
+            // Mace head at tip of weapon
+            ctx.beginPath(); ctx.arc(weaponTip+2,0,6,0,Math.PI*2); ctx.fill(); 
+        } else if(kind==='Saber'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(drawX,-2,drawWidth,4); 
+        } else if(kind==='Hammer'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(drawX,-2,drawWidth,4); 
+            // Hammer head at tip of weapon
+            ctx.beginPath(); ctx.arc(weaponTip+2,0,6,0,Math.PI*2); ctx.fill(); 
+        } else if(kind==='Bow'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(drawX,-2,drawWidth,4); 
+            // Bow arc at tip of weapon
+            ctx.beginPath(); ctx.arc(weaponTip,0,12,0,Math.PI*2); ctx.stroke(); 
+        } else if(kind==='Crossbow'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(drawX,-2,drawWidth,4); 
+            ctx.fillRect(drawX-8,8,drawWidth+16,4); 
+        } else if(kind==='Staff'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(drawX,-2,drawWidth,4); 
+        } else if(kind==='Wand'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(drawX,-2,drawWidth,4); 
+        } else if(kind==='Katana'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(drawX,-2,drawWidth,4); 
+        } else if(kind==='Rapier'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(drawX,-2,drawWidth,4); 
+        } else if(kind==='Warhammer'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(drawX,-2,drawWidth,4); 
+            // Warhammer head at tip of weapon
+            ctx.beginPath(); ctx.arc(weaponTip+2,0,6,0,Math.PI*2); ctx.fill(); 
+        } else if(kind==='Battleaxe'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(drawX,-2,drawWidth,4); 
+            // Battleaxe head at tip of weapon
+            ctx.fillRect(weaponTip-4,-8,8,12); 
+        } else if(kind==='Halberd'){ 
+            ctx.fillStyle=m.base; ctx.fillRect(drawX,-2,drawWidth,4); 
+            ctx.fillRect(drawX-8,8,drawWidth+10,4); 
+        } else { 
+            ctx.fillStyle=m.base; ctx.fillRect(drawX,-2,drawWidth,4); 
+        }
+    }
+    
+    // Draw elemental effects after the weapon base
+    // Note: Effects are drawn in local coordinate system after transform
+    // Need to account for weapon direction (flipped or not)
+    if (elementalType) {
+        ctx.save();
+        const particleCount = 8;
+        const particleSpeed = 0.3;
+        
+        // Determine effect positioning based on image mirror state
+        // When image is mirrored (needsImageMirror), we use negative coordinates
+        const effectStart = needsImageMirror ? -weaponLength : 0;
+        const effectEnd = needsImageMirror ? 0 : weaponLength;
+        
+        if (elementalType === 'Fire') {
+            // Fire effect - orange/red/yellow particles that flicker upward
+            for (let i = 0; i < particleCount; i++) {
+                const offset = effectStart + (i / particleCount) * weaponLength;
+                const yOffset = (animTime * particleSpeed + i * 0.5) % 10;
+                const size = 2 + Math.sin(animTime * 0.1 + i) * 1;
+                
+                // Create gradient for fire
+                const gradient = ctx.createLinearGradient(offset, -size, offset, size * 2);
+                gradient.addColorStop(0, `rgba(255, 165, 0, ${0.8 - yOffset * 0.1})`); // Orange
+                gradient.addColorStop(0.5, `rgba(255, 69, 0, ${0.6 - yOffset * 0.08})`); // Red-orange
+                gradient.addColorStop(1, `rgba(255, 215, 0, ${0.4 - yOffset * 0.06})`); // Gold
+                
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(offset, -yOffset, size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Add glowing base glow
+            ctx.globalAlpha = 0.4 + Math.sin(animTime * 0.2) * 0.2;
+            ctx.shadowColor = '#ff4500';
+            ctx.shadowBlur = 8;
+            ctx.fillStyle = '#ff6347';
+            ctx.fillRect(effectStart, -3, weaponLength, 6);
+            ctx.shadowBlur = 0;
+            ctx.globalAlpha = 1.0;
+        } else if (elementalType === 'Acid') {
+            // Acid effect - green bubbling particles
+            for (let i = 0; i < particleCount; i++) {
+                const offset = effectStart + (i / particleCount) * weaponLength;
+                const yOffset = (Math.sin(animTime * 0.1 + i) * 3);
+                const size = 1.5 + Math.cos(animTime * 0.15 + i) * 0.8;
+                
+                ctx.fillStyle = `rgba(50, 205, 50, ${0.7 + Math.sin(animTime * 0.1 + i) * 0.3})`; // Lime green
+                ctx.beginPath();
+                ctx.arc(offset, yOffset, size, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Add darker core
+                ctx.fillStyle = `rgba(34, 139, 34, 0.8)`; // Forest green
+                ctx.beginPath();
+                ctx.arc(offset, yOffset, size * 0.6, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Acid dripping effect
+            ctx.globalAlpha = 0.5;
+            ctx.fillStyle = '#32cd32';
+            ctx.fillRect(effectStart, -2.5, weaponLength, 5);
+            ctx.globalAlpha = 1.0;
+        } else if (elementalType === 'Lightning') {
+            // Lightning effect - blue/white crackling electricity
+            const sparks = 12;
+            for (let i = 0; i < sparks; i++) {
+                const offset = effectStart + (i / sparks) * weaponLength;
+                const sparkOffset = (Math.sin(animTime * 0.3 + i * 0.5) * 4);
+                const sparkSize = 1 + (Math.sin(animTime * 0.2 + i * 0.7) * 0.5 + 0.5) * 2; // Deterministic size
+                
+                // Bright white/blue sparks
+                ctx.fillStyle = `rgba(135, 206, 250, ${0.9})`; // Light sky blue
+                ctx.beginPath();
+                ctx.arc(offset, sparkOffset, sparkSize, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.fillStyle = `rgba(255, 255, 255, ${0.7})`; // White core
+                ctx.beginPath();
+                ctx.arc(offset, sparkOffset, sparkSize * 0.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Electric glow along the weapon
+            ctx.globalAlpha = 0.3 + Math.sin(animTime * 0.5) * 0.2;
+            ctx.shadowColor = '#00bfff';
+            ctx.shadowBlur = 10;
+            ctx.strokeStyle = '#87ceeb';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(effectStart, 0);
+            ctx.lineTo(effectEnd, 0);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            ctx.globalAlpha = 1.0;
+        } else if (elementalType === 'Frost') {
+            // Frost effect - blue/white ice crystals
+            for (let i = 0; i < particleCount; i++) {
+                const offset = effectStart + (i / particleCount) * weaponLength;
+                const yOffset = (Math.cos(animTime * 0.08 + i * 0.7) * 2);
+                const size = 1.5 + Math.sin(animTime * 0.12 + i) * 0.8;
+                const rotation = animTime * 0.05 + i;
+                
+                ctx.save();
+                ctx.translate(offset, yOffset);
+                ctx.rotate(rotation);
+                
+                // Ice crystal - hexagon shape
+                ctx.fillStyle = `rgba(173, 216, 230, ${0.8})`; // Light blue
+                ctx.beginPath();
+                for (let j = 0; j < 6; j++) {
+                    const angle = (Math.PI / 3) * j;
+                    const x = Math.cos(angle) * size;
+                    const y = Math.sin(angle) * size;
+                    if (j === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.closePath();
+                ctx.fill();
+                
+                // Bright white center
+                ctx.fillStyle = `rgba(255, 255, 255, 0.9)`;
+                ctx.beginPath();
+                ctx.arc(0, 0, size * 0.4, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.restore();
+            }
+            
+            // Frosty glow
+            ctx.globalAlpha = 0.4 + Math.cos(animTime * 0.15) * 0.1;
+            ctx.shadowColor = '#b0e0e6';
+            ctx.shadowBlur = 8;
+            ctx.fillStyle = '#add8e6';
+            ctx.fillRect(effectStart, -3, weaponLength, 6);
+            ctx.shadowBlur = 0;
+            ctx.globalAlpha = 1.0;
+        }
+        ctx.restore();
+    }
+    
     ctx.restore(); 
 }
 
@@ -1194,13 +1894,18 @@ window.Portal=function(id, x, y, targetLevel) {
     this.h = 64;
     this.targetLevel = targetLevel || 'sample_level';
     this.rotation = 0;
-    this.rotationSpeed = 2; // radians per second
+    this.rotationSpeed = 3.5; // radians per second (increased for more noticeable spin)
     this.pulsePhase = 0;
     this.pulseSpeed = 3; // pulses per second
 };
 
 Portal.prototype.update = function(dt) {
+    // Faster rotation for cool spinning effect (3.5 radians per second = ~200 degrees per second)
     this.rotation += this.rotationSpeed * dt;
+    // Keep rotation within 0-2π range to prevent overflow
+    if (this.rotation > Math.PI * 2) {
+        this.rotation -= Math.PI * 2;
+    }
     this.pulsePhase += this.pulseSpeed * dt;
 };
 
@@ -1210,14 +1915,13 @@ Portal.prototype.draw = function(ctx) {
     // Move to portal center
     ctx.translate(this.x + this.w/2, this.y + this.h/2);
     
-    // Apply rotation
-    ctx.rotate(this.rotation);
-    
     // Calculate pulse effect
     const pulseScale = 1 + Math.sin(this.pulsePhase * Math.PI * 2) * 0.15;
     ctx.scale(pulseScale, pulseScale);
     
-    // Draw glowing background
+    // Draw glowing background (rotates with portal)
+    ctx.save();
+    ctx.rotate(this.rotation);
     ctx.shadowColor = '#8A2BE2';
     ctx.shadowBlur = 20;
     ctx.fillStyle = '#4B0082';
@@ -1225,40 +1929,53 @@ Portal.prototype.draw = function(ctx) {
     ctx.beginPath();
     ctx.arc(0, 0, 35, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
     
     // Reset shadow for rings
     ctx.shadowBlur = 0;
     ctx.globalAlpha = 1.0;
     
-    // Draw outer ring - bright purple
+    // Draw outer ring - bright purple (rotates)
+    ctx.save();
+    ctx.rotate(this.rotation);
     ctx.strokeStyle = '#FF00FF';
     ctx.lineWidth = 6;
     ctx.beginPath();
     ctx.arc(0, 0, 30, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.restore();
     
-    // Draw middle ring - medium purple
+    // Draw middle ring - medium purple (rotates in opposite direction for cool effect)
+    ctx.save();
+    ctx.rotate(-this.rotation * 0.7);
     ctx.strokeStyle = '#8A2BE2';
     ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.arc(0, 0, 22, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.restore();
     
-    // Draw inner ring - light purple
+    // Draw inner ring - light purple (rotates)
+    ctx.save();
+    ctx.rotate(this.rotation * 1.3);
     ctx.strokeStyle = '#DA70D6';
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.arc(0, 0, 14, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.restore();
     
-    // Draw center - bright white
+    // Draw center - bright white (rotates)
+    ctx.save();
+    ctx.rotate(this.rotation * 2);
     ctx.fillStyle = '#FFFFFF';
     ctx.globalAlpha = 0.8;
     ctx.beginPath();
     ctx.arc(0, 0, 8, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
     
-    // Draw animated sparkles
+    // Draw animated sparkles (already positioned based on rotation)
     ctx.globalAlpha = 1.0;
     ctx.fillStyle = '#FFFFFF';
     for (let i = 0; i < 12; i++) {
@@ -1272,7 +1989,7 @@ Portal.prototype.draw = function(ctx) {
         ctx.fill();
     }
     
-    // Draw "PORTAL" text
+    // Draw "PORTAL" text (doesn't rotate, stays readable)
     ctx.fillStyle = '#FFFFFF';
     ctx.font = 'bold 10px Arial';
     ctx.textAlign = 'center';
@@ -1366,8 +2083,24 @@ Player.prototype.applyEquipment=function(){
         }
     } 
     this.stats=s; 
-    this.maxHealth = Math.max(1, s.Health + s.Endurance*8); 
-    if(this.health>this.maxHealth) this.health=this.maxHealth; 
+    
+    // Store old maxHealth to preserve health percentage if needed
+    const oldMaxHealth = this.maxHealth;
+    this.maxHealth = Math.max(1, s.Health + s.Endurance*8);
+    
+    // Ensure health is valid after maxHealth changes
+    // If health exceeds new maxHealth, cap it. Otherwise preserve current health.
+    if(this.health > this.maxHealth) {
+        this.health = this.maxHealth;
+    } else if(oldMaxHealth > 0 && this.maxHealth > oldMaxHealth) {
+        // If maxHealth increased, preserve health percentage for better UX
+        const healthPercent = this.health / oldMaxHealth;
+        const newHealth = Math.floor(this.maxHealth * healthPercent);
+        // Only apply if it results in more health (don't reduce health when gaining better armor)
+        if(newHealth > this.health) {
+            this.health = newHealth;
+        }
+    }
     
     // Update weapon info when equipment changes
     if (typeof window.updateWeaponInfo === 'function') {

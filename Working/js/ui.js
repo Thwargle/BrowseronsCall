@@ -86,12 +86,40 @@ window.showTooltipForItem=function(it,ev){
         return;
     }
     
-    let tooltipHTML = `<div class="name ${window.RARITY_CLASS[it.rarity]||''}">${it.name}</div>`;
+    // Get rarity class - ensure consistency with vendor shop
+    let rarityClass = '';
+    if (window.RARITY_CLASS && window.RARITY_CLASS[it.rarity]) {
+        rarityClass = window.RARITY_CLASS[it.rarity];
+    }
+    // Always use getRarityColor to ensure consistency with vendor shop (which uses inline styles)
+    const rarityColor = getRarityColor(it.rarity);
+    let tooltipHTML = `<div class="name ${rarityClass}" style="color: ${rarityColor}">${it.name}</div>`;
     tooltipHTML += `<div class="desc">${it.type} ${it.short ? ('- ' + it.short) : ''}</div>`;
     
-    // Add weapon damage if it's a weapon
-    if(it.type === 'weapon' && it.dmgMin && it.dmgMax) {
-        tooltipHTML += `<div class="statline">Damage: ${it.dmgMin} - ${it.dmgMax}</div>`;
+    // Add weapon damage and damage types if it's a weapon
+    if(it.type === 'weapon') {
+        // Add hand type information (1 Handed or 2 Handed)
+        const isTwoHanded = it.twoHanded || 
+            (it.subtype && typeof window.checkIfTwoHanded === 'function' && window.checkIfTwoHanded(it.subtype));
+        const handType = isTwoHanded ? '2 Handed Weapon' : '1 Handed Weapon';
+        tooltipHTML += `<div class="statline">${handType}</div>`;
+        
+        if(it.dmgMin && it.dmgMax) {
+            tooltipHTML += `<div class="statline">Damage: ${it.dmgMin} - ${it.dmgMax}</div>`;
+        }
+        
+        // Add damage type information
+        let damageTypeInfo = '';
+        const physicalType = it.physicalDamageType || 'Slashing';
+        const elementalType = it.elementalDamageType;
+        
+        if (elementalType) {
+            damageTypeInfo = `${physicalType} + ${elementalType}`;
+        } else {
+            damageTypeInfo = physicalType;
+        }
+        
+        tooltipHTML += `<div class="statline">Damage Type: ${damageTypeInfo}</div>`;
     }
     
     // Add stats if they exist
@@ -628,7 +656,18 @@ window.refreshInventoryUI=function(){
     
     document.querySelectorAll('.pd-slot').forEach(el=>{ 
         const s=el.dataset.slot; 
-        const equippedItem = window.equip[s];
+        let equippedItem = window.equip[s];
+        
+        // Special handling for two-handed weapons: show in both mainhand and offhand slots
+        if (s === 'offhand' && window.equip && window.equip.mainhand) {
+            const mainhandIsTwoHanded = window.equip.mainhand.twoHanded || 
+                (window.equip.mainhand.subtype && typeof window.checkIfTwoHanded === 'function' && window.checkIfTwoHanded(window.equip.mainhand.subtype));
+            
+            // If mainhand is two-handed, show it in offhand slot too
+            if (mainhandIsTwoHanded && (!equippedItem || equippedItem === window.equip.mainhand || (equippedItem.id && equippedItem.id === window.equip.mainhand.id))) {
+                equippedItem = window.equip.mainhand;
+            }
+        }
         
         // Only render if we have a valid equipped item
         if (equippedItem && typeof equippedItem === 'object' && equippedItem.id) {
@@ -1124,7 +1163,18 @@ window.displayInventoryItems=function() {
             return;
         }
         
-        const equippedItem = window.equip[s];
+        let equippedItem = window.equip[s];
+        
+        // Special handling for two-handed weapons: show in both mainhand and offhand slots
+        if (s === 'offhand' && window.equip && window.equip.mainhand) {
+            const mainhandIsTwoHanded = window.equip.mainhand.twoHanded || 
+                (window.equip.mainhand.subtype && typeof window.checkIfTwoHanded === 'function' && window.checkIfTwoHanded(window.equip.mainhand.subtype));
+            
+            // If mainhand is two-handed, show it in offhand slot too
+            if (mainhandIsTwoHanded && (!equippedItem || equippedItem === window.equip.mainhand || (equippedItem.id && equippedItem.id === window.equip.mainhand.id))) {
+                equippedItem = window.equip.mainhand;
+            }
+        }
         
         // Clear slot first to ensure clean state
         el.innerHTML = '';
@@ -1211,6 +1261,17 @@ document.getElementById('closeShop').addEventListener('click', ()=>{
     shopPanel.style.display='none'; 
 });
 
+// Helper function to get rarity color
+function getRarityColor(rarity) {
+    if (!rarity) return '#ffffff'; // Default white
+    const rar = rarity.toLowerCase();
+    if (rar === 'legendary') return '#ff9a1c'; // Orange
+    if (rar === 'epic') return '#b37bff'; // Purple
+    if (rar === 'rare') return '#3da5ff'; // Blue
+    if (rar === 'uncommon') return '#4caf50'; // Green
+    return '#ffffff'; // Common - white
+}
+
 window.openShop=function(){ 
     shopList.innerHTML=''; 
     
@@ -1256,7 +1317,8 @@ window.openShop=function(){
             const row=document.createElement('div'); 
             row.className='row'; 
             const left=document.createElement('div'); 
-            left.innerText = `${it.name} (${it.rarity})`; 
+            const rarityColor = getRarityColor(it.rarity);
+            left.innerHTML = `<span style="color: ${rarityColor}">${it.name}</span>`;
             const right=document.createElement('div'); 
             right.innerHTML = `${it.value||0} <button>Sell</button>`; 
             right.querySelector('button').addEventListener('click', ()=>{ 
@@ -1280,7 +1342,8 @@ window.openShop=function(){
                     window.refreshInventoryUI(); 
                     // Item sold silently 
                 }
-                shopPanel.style.display='none'; 
+                // Keep vendor window open after selling - refresh the shop to show updated inventory
+                window.openShop();
             }); 
             row.appendChild(left); 
             row.appendChild(right); 
@@ -1303,7 +1366,8 @@ window.openShop=function(){
             const row = document.createElement('div');
             row.className = 'row';
             const left = document.createElement('div');
-            left.innerText = `${it.name} (${it.rarity}) - ${slot}`;
+            const rarityColor = getRarityColor(it.rarity);
+            left.innerHTML = `<span style="color: ${rarityColor}">${it.name}</span>`;
             const right = document.createElement('div');
             right.innerHTML = `${it.value||0} <button>Sell</button>`;
             right.querySelector('button').addEventListener('click', () => {
@@ -1327,7 +1391,8 @@ window.openShop=function(){
                     window.refreshInventoryUI();
                     // Item sold silently
                 }
-                shopPanel.style.display='none';
+                // Keep vendor window open after selling - refresh the shop to show updated inventory
+                window.openShop();
             });
             row.appendChild(left);
             row.appendChild(right);
@@ -1386,8 +1451,8 @@ window.sellAllInventory = function() {
         }
     }
     
-    // Close the shop panel
-    shopPanel.style.display = 'none';
+    // Keep vendor window open after selling all - refresh the shop to show updated inventory
+    window.openShop();
 };
 
 // Panel scrollbar management

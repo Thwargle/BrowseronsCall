@@ -1,34 +1,34 @@
 {
   "id": "Thwargle",
   "name": "Thwargle",
-  "x": 458.99664000002963,
+  "x": 544.0337599999926,
   "y": 486,
-  "health": 1026,
-  "maxHealth": 1026,
-  "pyreals": 55918,
+  "health": 1137,
+  "maxHealth": 1137,
+  "pyreals": 747,
   "equip": {
     "head": {
-      "id": "armor-1761978524742-3s460t9ct",
-      "name": "Eternal Head of the Ancients",
+      "id": "armor-1762230496812-8vojcmi7l",
+      "name": "Sacred Head of the Myth",
       "type": "armor",
-      "level": 4,
+      "level": 3,
       "rarity": "Legendary",
       "short": "Legendary head armor piece with enhanced protection",
       "slot": "head",
       "stats": {
-        "Endurance": 13,
-        "Health": 6,
-        "Coordination": 3
+        "Endurance": 14,
+        "Health": 5,
+        "Coordination": 2
       },
-      "value": 336,
+      "value": 252,
       "icon": null,
       "colors": {
-        "fill": "#32CD32",
-        "edge": "#228B22",
+        "fill": "#FF69B4",
+        "edge": "#C71585",
         "legendary": true,
         "gradient": {
-          "color1": "#32CD32",
-          "color2": "#9370DB"
+          "color1": "#FF69B4",
+          "color2": "#DC143C"
         }
       }
     },
@@ -49,20 +49,29 @@
       "icon": null
     },
     "shoulders": {
-      "id": "armor-1756882056972-eyzhcml23",
-      "name": "Sacred Shoulders of the Legend",
+      "id": "armor-1762226001158-sj6eh5is0",
+      "name": "Eternal Shoulders of the Ancients",
       "type": "armor",
-      "level": 5,
+      "level": 6,
       "rarity": "Legendary",
       "short": "Legendary shoulders armor piece with enhanced protection",
       "slot": "shoulders",
       "stats": {
-        "Focus": 16,
-        "Mana": 7,
-        "Endurance": 5
+        "Endurance": 17,
+        "Health": 8,
+        "Coordination": 4
       },
-      "value": 420,
-      "icon": null
+      "value": 504,
+      "icon": null,
+      "colors": {
+        "fill": "#DC143C",
+        "edge": "#191970",
+        "legendary": true,
+        "gradient": {
+          "color1": "#DC143C",
+          "color2": "#4169E1"
+        }
+      }
     },
     "chest": {
       "id": "armor-1761978513747-pasb0vh7u",
@@ -169,39 +178,25 @@
       "icon": null
     },
     "mainhand": {
-      "id": "weapon-1756928226190-8wwuwpdwh",
-      "name": "Sacred Wand of the Legend",
+      "id": "weapon-1762226055896-6rf6fp9n1",
+      "name": "Electric Immortal Katana of the Ancients",
       "type": "weapon",
       "level": 5,
       "rarity": "Legendary",
-      "short": "Legendary wand with enhanced properties",
+      "short": "Legendary katana with enhanced properties",
       "stats": {
-        "Focus": 16,
-        "Mana": 6
+        "Quickness": 18,
+        "Coordination": 6
       },
       "dmgMin": 38,
       "dmgMax": 56,
       "value": 525,
       "icon": null,
-      "subtype": "Wand"
+      "subtype": "Katana",
+      "physicalDamageType": "Slashing",
+      "elementalDamageType": "Lightning"
     },
-    "offhand": {
-      "id": "weapon-1761886745308-q2ed9w4t7",
-      "name": "Transcendent Spear of the Ancients",
-      "type": "weapon",
-      "level": 8,
-      "rarity": "Legendary",
-      "short": "Legendary spear with enhanced properties",
-      "stats": {
-        "Strength": 14,
-        "Quickness": 14
-      },
-      "dmgMin": 60,
-      "dmgMax": 90,
-      "value": 840,
-      "icon": null,
-      "subtype": "Spear"
-    },
+    "offhand": null,
     "trinket": null
   },
   "inventory": [
@@ -218,8 +213,8 @@
     null,
     null
   ],
-  "shirtColor": "#2f4f4f",
-  "pantColor": "#a0522d",
+  "shirtColor": "#deb887",
+  "pantColor": "#008000",
   "equipmentColors": {},
-  "lastSaved": 1761978614281
+  "lastSaved": 1762234668249
 }

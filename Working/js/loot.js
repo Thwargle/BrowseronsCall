@@ -57,12 +57,96 @@ const ITEM_NAMES = {
     }
 };
 
+// Damage type constants
+const PHYSICAL_DAMAGE_TYPES = ['Bludgeoning', 'Slashing', 'Piercing'];
+const ELEMENTAL_DAMAGE_TYPES = ['Fire', 'Acid', 'Lightning', 'Frost'];
+
+// Elemental name prefixes
+const ELEMENTAL_PREFIXES = {
+    'Fire': ['Fiery', 'Burning', 'Flaming', 'Blazing'],
+    'Acid': ['Corrosive', 'Venomous', 'Toxic', 'Acidic'],
+    'Lightning': ['Shocking', 'Crackling', 'Electric', 'Thunderous'],
+    'Frost': ['Freezing', 'Icy', 'Frostbitten', 'Glacial']
+};
+
+// Function to determine if a weapon is two-handed
+function isTwoHandedWeapon(weaponName) {
+    if (!weaponName) return false;
+    
+    // Two-handed weapons are longer weapons that require both hands
+    const twoHandedWeapons = ['Spear', 'Javelin', 'Trident', 'Pike', 'Staff', 'Halberd', 'Bow', 'Crossbow'];
+    return twoHandedWeapons.includes(weaponName);
+}
+
+// Helper function to check if an item is two-handed (works with item objects or weapon names)
+function checkIfTwoHanded(itemOrName) {
+    if (!itemOrName) return false;
+    if (typeof itemOrName === 'string') {
+        return isTwoHandedWeapon(itemOrName);
+    }
+    // Check item properties
+    if (itemOrName.twoHanded !== undefined) {
+        return itemOrName.twoHanded === true;
+    }
+    if (itemOrName.subtype) {
+        return isTwoHandedWeapon(itemOrName.subtype);
+    }
+    if (itemOrName.name) {
+        const weaponKind = typeof window !== 'undefined' && window.weaponKindFromName ? 
+            window.weaponKindFromName(itemOrName.name) : null;
+        return weaponKind ? isTwoHandedWeapon(weaponKind) : false;
+    }
+    return false;
+}
+
+// Function to determine physical damage type based on weapon subtype
+function determinePhysicalDamageType(weaponName) {
+    if (!weaponName) {
+        console.warn('determinePhysicalDamageType called with null/undefined weaponName');
+        return 'Slashing';
+    }
+    
+    // Bludgeoning weapons - check first
+    const bludgeoningWeapons = ['Mace', 'Hammer', 'Warhammer', 'Club', 'Maul', 'Flail'];
+    if (bludgeoningWeapons.includes(weaponName)) {
+        return 'Bludgeoning';
+    }
+    
+    // Piercing weapons - check second
+    const piercingWeapons = ['Dagger', 'Rapier', 'Spear', 'Bow', 'Crossbow', 'Javelin', 'Trident', 'Pike'];
+    if (piercingWeapons.includes(weaponName)) {
+        return 'Piercing';
+    }
+    
+    // Slashing weapons (default for most)
+    // Sword, Axe, Katana, Battleaxe, Halberd, Staff (can be slashing), Wand (can be slashing), Scimitar, Longsword, Greatsword, Falchion
+    // Explicitly list slashing weapons for clarity
+    const slashingWeapons = ['Sword', 'Axe', 'Katana', 'Battleaxe', 'Halberd', 'Scimitar', 'Longsword', 'Greatsword', 'Blade', 'Saber', 'Staff', 'Wand'];
+    if (slashingWeapons.includes(weaponName)) {
+        return 'Slashing';
+    }
+    
+    // Default to slashing if weapon type not recognized
+    console.warn(`Unknown weapon type: ${weaponName}, defaulting to Slashing`);
+    return 'Slashing';
+}
+
 // Function to generate item name based on rarity and type
-function generateItemName(itemType, rarity, baseName, slot = null) {
+function generateItemName(itemType, rarity, baseName, slot = null, elementalType = null) {
     const prefixes = ITEM_NAMES[itemType]?.prefixes[rarity] || [];
     const suffixes = ITEM_NAMES[itemType]?.suffixes[rarity] || [];
     
-    const prefix = prefixes.length > 0 ? prefixes[Math.floor(Math.random() * prefixes.length)] : '';
+    let prefix = prefixes.length > 0 ? prefixes[Math.floor(Math.random() * prefixes.length)] : '';
+    
+    // Add elemental prefix if weapon has elemental damage
+    if (elementalType && itemType === 'weapon') {
+        const elementalPrefixes = ELEMENTAL_PREFIXES[elementalType] || [];
+        if (elementalPrefixes.length > 0) {
+            const elemPrefix = elementalPrefixes[Math.floor(Math.random() * elementalPrefixes.length)];
+            prefix = `${elemPrefix} ${prefix}`;
+        }
+    }
+    
     const suffix = suffixes.length > 0 ? suffixes[Math.floor(Math.random() * suffixes.length)] : '';
     
     let name = baseName;
@@ -179,14 +263,65 @@ function generateLoot(enemyType, enemyLevel) {
             };
         } else if (dropType === 'weapon') {
             const level = Math.floor(Math.random() * (lootTable.weapon.level[1] - lootTable.weapon.level[0] + 1)) + lootTable.weapon.level[0];
-            const weaponNames = ['Sword', 'Axe', 'Mace', 'Dagger', 'Spear', 'Hammer', 'Bow', 'Crossbow', 'Staff', 'Wand', 'Katana', 'Rapier', 'Warhammer', 'Battleaxe', 'Halberd'];
-            const weaponName = weaponNames[Math.floor(Math.random() * weaponNames.length)];
+            
+            // Expanded weapon pool with better distribution
+            // Organized by damage type for easier balancing
+            const slashingWeapons = ['Sword', 'Axe', 'Katana', 'Battleaxe', 'Halberd', 'Scimitar', 'Longsword', 'Greatsword'];
+            const bludgeoningWeapons = ['Mace', 'Hammer', 'Warhammer', 'Club', 'Maul', 'Flail'];
+            const piercingWeapons = ['Dagger', 'Rapier', 'Spear', 'Bow', 'Crossbow', 'Javelin', 'Trident'];
+            const allWeapons = [...slashingWeapons, ...bludgeoningWeapons, ...piercingWeapons, 'Staff', 'Wand']; // Staff/Wand are special
+            
+            // Weight weapons more evenly across damage types (33% each for better balance)
+            const typeRoll = Math.random();
+            let weaponName;
+            let selectedType = '';
+            if (typeRoll < 0.33) {
+                // 33% chance for slashing
+                weaponName = slashingWeapons[Math.floor(Math.random() * slashingWeapons.length)];
+                selectedType = 'slashing';
+            } else if (typeRoll < 0.66) {
+                // 33% chance for bludgeoning
+                weaponName = bludgeoningWeapons[Math.floor(Math.random() * bludgeoningWeapons.length)];
+                selectedType = 'bludgeoning';
+            } else {
+                // 34% chance for piercing (includes Staff/Wand which are special)
+                // 90% of piercing pool is actual piercing, 10% is Staff/Wand
+                if (typeRoll < 0.97) {
+                    weaponName = piercingWeapons[Math.floor(Math.random() * piercingWeapons.length)];
+                    selectedType = 'piercing';
+                } else {
+                    // 3% chance (10% of 30%) for Staff/Wand
+                    weaponName = Math.random() < 0.5 ? 'Staff' : 'Wand';
+                    selectedType = 'magic';
+                }
+            }
             
             // Use new rarity determination system
             const rarity = determineRarity(level, enemyType);
             const rarityBonus = RARITY_BONUSES[rarity];
             
-            const fullName = generateItemName('weapon', rarity, weaponName);
+            // Determine physical damage type based on weapon subtype
+            const physicalDamageType = determinePhysicalDamageType(weaponName);
+            
+            // Debug log to verify weapon selection is working
+            console.log(`Generated weapon: ${weaponName} (selected from ${selectedType} pool, detected as ${physicalDamageType})`);
+            
+            // Determine if weapon should have elemental damage (increased chances for more variety)
+            // Higher rarity = higher chance of elemental damage
+            let elementalDamageType = null;
+            const elementalRoll = Math.random();
+            let elementalChance = 0.25; // Base 25% chance for Common (increased from 10%)
+            if (rarity === 'Legendary') elementalChance = 0.75; // 75% for Legendary (increased from 50%)
+            else if (rarity === 'Epic') elementalChance = 0.60; // 60% for Epic (increased from 40%)
+            else if (rarity === 'Rare') elementalChance = 0.50; // 50% for Rare (increased from 30%)
+            else if (rarity === 'Uncommon') elementalChance = 0.35; // 35% for Uncommon (increased from 20%)
+            
+            if (elementalRoll < elementalChance) {
+                // Randomly assign one elemental type
+                elementalDamageType = ELEMENTAL_DAMAGE_TYPES[Math.floor(Math.random() * ELEMENTAL_DAMAGE_TYPES.length)];
+            }
+            
+            const fullName = generateItemName('weapon', rarity, weaponName, null, elementalDamageType);
             
             // Calculate base stats with rarity bonuses
             const baseStatValue = Math.round(level * 1.5);
@@ -196,24 +331,28 @@ function generateLoot(enemyType, enemyLevel) {
             let primaryStats = {};
             let secondaryStats = {};
             
-            if (['Sword', 'Axe', 'Mace', 'Hammer', 'Warhammer', 'Battleaxe', 'Halberd'].includes(weaponName)) {
-                // Heavy weapons - focus on Strength
+            // Heavy/Strength weapons
+            if (['Sword', 'Axe', 'Mace', 'Hammer', 'Warhammer', 'Battleaxe', 'Halberd', 'Club', 'Maul', 'Flail', 'Greatsword', 'Longsword'].includes(weaponName)) {
                 primaryStats = { Strength: baseStatValue + bonusStatValue };
                 secondaryStats = { Endurance: Math.round(baseStatValue * 0.8) };
-            } else if (['Dagger', 'Rapier', 'Katana'].includes(weaponName)) {
-                // Light weapons - focus on Quickness
+            } 
+            // Light/Quickness weapons
+            else if (['Dagger', 'Rapier', 'Katana', 'Scimitar'].includes(weaponName)) {
                 primaryStats = { Quickness: baseStatValue + bonusStatValue };
                 secondaryStats = { Coordination: Math.round(baseStatValue * 0.8) };
-            } else if (['Bow', 'Crossbow'].includes(weaponName)) {
-                // Ranged weapons - focus on Coordination
+            } 
+            // Ranged/Coordination weapons
+            else if (['Bow', 'Crossbow', 'Javelin'].includes(weaponName)) {
                 primaryStats = { Coordination: baseStatValue + bonusStatValue };
                 secondaryStats = { Quickness: Math.round(baseStatValue * 0.8) };
-            } else if (['Staff', 'Wand'].includes(weaponName)) {
-                // Magic weapons - focus on Focus
+            } 
+            // Magic/Focus weapons
+            else if (['Staff', 'Wand'].includes(weaponName)) {
                 primaryStats = { Focus: baseStatValue + bonusStatValue };
                 secondaryStats = { Mana: Math.round(baseStatValue * 0.8) };
-            } else {
-                // Balanced weapons (Spear) - balanced stats
+            } 
+            // Balanced/Piercing weapons (Spear, Trident, Pike)
+            else {
                 primaryStats = { 
                     Strength: Math.round(baseStatValue * 0.8) + Math.floor(bonusStatValue / 2), 
                     Quickness: Math.round(baseStatValue * 0.8) + Math.floor(bonusStatValue / 2)
@@ -238,8 +377,21 @@ function generateLoot(enemyType, enemyLevel) {
                 dmgMax: dmgMax,
                 value: Math.round(level * 15 * (rarity === 'Legendary' ? 7 : rarity === 'Epic' ? 3 : rarity === 'Rare' ? 2 : rarity === 'Uncommon' ? 1.5 : 1)),
                 icon: null,
-                subtype: weaponName
+                subtype: weaponName,
+                physicalDamageType: physicalDamageType, // Ensure physical damage type is set
+                elementalDamageType: elementalDamageType || null, // Store elemental type if present
+                twoHanded: isTwoHandedWeapon(weaponName) // Mark if weapon is two-handed
             };
+            
+            // Verify damage type was set correctly (Staff/Wand are special - they're magic type but have Slashing physical damage)
+            if (!dropItem.physicalDamageType) {
+                console.error(`ERROR: Weapon ${weaponName} missing physicalDamageType`);
+            } else if (dropItem.physicalDamageType === 'Slashing' && selectedType !== 'slashing' && selectedType !== 'magic') {
+                console.error(`ERROR: Weapon ${weaponName} selected from ${selectedType} pool but damage type is ${dropItem.physicalDamageType}`);
+            }
+            
+            // Log final item for debugging
+            console.log(`Created weapon item: ${dropItem.name}, Damage Type: ${dropItem.physicalDamageType}${dropItem.elementalDamageType ? ' + ' + dropItem.elementalDamageType : ''}`);
         } else {
             const level = Math.floor(Math.random() * (lootTable.armor.level[1] - lootTable.armor.level[0] + 1)) + lootTable.armor.level[0];
             const slots = ['head', 'chest', 'legs', 'feet', 'hands', 'wrists', 'waist', 'neck', 'shoulders'];
@@ -333,7 +485,10 @@ function createTestSword() {
         dmgMin: 5,
         dmgMax: 8,
         subtype: 'Sword',
-        icon: null
+        icon: null,
+        physicalDamageType: 'Slashing', // Swords are slashing
+        elementalDamageType: null, // No elemental damage for starter weapon
+        twoHanded: false // Starter sword is one-handed
     };
 }
 
@@ -342,5 +497,7 @@ module.exports = {
     ITEM_NAMES,
     generateItemName,
     generateLoot,
-    createTestSword
+    createTestSword,
+    isTwoHandedWeapon,
+    checkIfTwoHanded
 };

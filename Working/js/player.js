@@ -77,7 +77,7 @@ function savePlayerData(playerName, playerData) {
             y: playerData.y,
             health: playerData.health,
             maxHealth: playerData.maxHealth,
-            pyreals: playerData.pyreals,
+            pyreals: playerData.pyreals !== undefined && playerData.pyreals !== null ? playerData.pyreals : 0, // Ensure pyreals are always saved, defaulting to 0
             equip: playerData.equip,
             inventory: playerData.inventory,
             shirtColor: playerData.shirtColor,
@@ -88,6 +88,7 @@ function savePlayerData(playerName, playerData) {
         
         fs.writeFileSync(filePath, JSON.stringify(dataToSave, null, 2));
         console.log(`Saved player data for ${playerName} to ${fileName}`);
+        console.log(`Pyreals saved: ${dataToSave.pyreals}`);
         console.log(`Equipment data saved:`, JSON.stringify(dataToSave.equip, null, 2));
         console.log(`Inventory data saved:`, JSON.stringify(dataToSave.inventory, null, 2));
         return true;
@@ -110,6 +111,7 @@ function loadPlayerData(playerName) {
         const data = fs.readFileSync(filePath, 'utf8');
         const playerData = JSON.parse(data);
         console.log(`Loaded player data for ${playerName} from ${fileName}`);
+        console.log(`Pyreals loaded: ${playerData.pyreals !== undefined ? playerData.pyreals : 'undefined (will default to 0)'}`);
         return playerData;
     } catch (error) {
         console.error(`Error loading player data for ${playerName}:`, error);

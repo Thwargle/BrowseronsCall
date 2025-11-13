@@ -3,8 +3,8 @@
 ## 🚨 **Problem**
 Firefox and other modern browsers are blocking insecure WebSocket connections (`ws://`) when players try to connect from external networks, showing:
 ```
-HTTPS-Only Mode: Upgrading insecure request "ws://173.44.75.134:8080/" to use "wss"
-Firefox can't establish a connection to the server at wss://173.44.75.134:8080/
+HTTPS-Only Mode: Upgrading insecure request "ws://173.44.75.134:8081/" to use "wss"
+Firefox can't establish a connection to the server at wss://173.44.75.134:8081/
 ```
 
 ## ✅ **Solutions (Choose One)**
@@ -43,7 +43,7 @@ winget install ngrok.ngrok
 
 #### **Step 2: Create HTTPS Tunnel**
 ```bash
-ngrok http 8080
+ngrok http 8081
 ```
 
 #### **Step 3: Players Use ngrok URL**
@@ -53,7 +53,7 @@ ngrok http 8080
 ## 🚀 **Immediate Action (Right Now)**
 
 ### **For Your Current Server:**
-1. **Keep HTTP server running** on port 8080
+1. **Keep HTTP server running** on port 8081
 2. **Tell players to disable HTTPS-only mode** in Firefox
 3. **Or use Chrome/Edge** which don't have this restriction
 
@@ -65,7 +65,7 @@ ngrok http 8080
 ## 🔧 **Server Commands**
 
 ```bash
-# Current HTTP server (port 8080)
+# Current HTTP server (port 8081)
 npm start
 
 # New HTTPS server (port 8443) - after generating certificates
@@ -80,7 +80,7 @@ npm run dev:https    # HTTPS
 
 | Server Type | Game URL | WebSocket URL | Port |
 |-------------|----------|---------------|------|
-| **HTTP** | `http://173.44.75.134:8080` | `ws://173.44.75.134:8080` | 8080 |
+| **HTTP** | `http://173.44.75.134:8081` | `ws://173.44.75.134:8081` | 8081 |
 | **HTTPS** | `https://173.44.75.134:8443` | `wss://173.44.75.134:8443` | 8443 |
 | **ngrok** | `https://abc123.ngrok.io` | `wss://abc123.ngrok.io` | Auto |
 
@@ -91,14 +91,14 @@ npm run dev:https    # HTTPS
    - Go to `about:config`
    - Search `dom.security.https_only_mode`
    - Set to `false`
-   - Connect to `http://173.44.75.134:8080`
+   - Connect to `http://173.44.75.134:8081`
 
 2. **Option B**: Use HTTPS server
    - Connect to `https://173.44.75.134:8443`
    - Accept self-signed certificate warning
 
 ### **Chrome/Edge Users:**
-- Connect directly to `http://173.44.75.134:8080`
+- Connect directly to `http://173.44.75.134:8081`
 - No HTTPS restrictions
 
 ## 🎯 **Recommended Next Steps**
@@ -114,9 +114,9 @@ npm run dev:https    # HTTPS
 - Ensure `server-cert.pem` and `server-key.pem` exist
 
 ### **Port Issues:**
-- Forward both ports 8080 (HTTP) and 8443 (HTTPS) on router
+- Forward both ports 8081 (HTTP) and 8443 (HTTPS) on router
 - Check firewall settings
 
 ### **Connection Refused:**
-- Verify server is running: `netstat -ano | findstr :8080`
+- Verify server is running: `netstat -ano | findstr :8081`
 - Check if HTTPS server is running: `netstat -ano | findstr :8443`
