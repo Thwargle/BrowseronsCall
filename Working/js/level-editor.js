@@ -85,6 +85,7 @@ class LevelEditor {
         document.getElementById('loadLevel').addEventListener('click', () => this.loadLevel());
         document.getElementById('undoBtn').addEventListener('click', () => this.undo());
         document.getElementById('clearLevel').addEventListener('click', () => this.clearLevel());
+        document.getElementById('applyDimensions').addEventListener('click', () => this.applyDimensions());
         
         // Selected object buttons
         document.getElementById('updateSelectedObject').addEventListener('click', () => this.updateSelectedObject());
@@ -109,12 +110,40 @@ class LevelEditor {
     }
     
     initializeCanvas() {
-        // Set canvas size
-        this.canvas.width = 3600;
-        this.canvas.height = 600;
+        // Set canvas size based on level dimensions
+        this.resizeCanvas(this.levelData.width, this.levelData.height);
+    }
+    
+    resizeCanvas(width, height) {
+        // Update level data dimensions
+        this.levelData.width = width;
+        this.levelData.height = height;
         
-        // Initialize with default ground
-        this.addFloorSegment(0, 550, 3600, 50, 'dirt');
+        // Set canvas size
+        this.canvas.width = width;
+        this.canvas.height = height;
+        
+        // Update UI display
+        document.getElementById('canvasSize').textContent = `${width} x ${height}`;
+        document.getElementById('levelWidth').value = width;
+        document.getElementById('levelHeight').value = height;
+        
+        // Re-render
+        this.render();
+    }
+    
+    applyDimensions() {
+        const width = parseInt(document.getElementById('levelWidth').value);
+        const height = parseInt(document.getElementById('levelHeight').value);
+        
+        if (width < 100 || width > 50000 || height < 100 || height > 50000) {
+            alert('Dimensions must be between 100 and 50000 pixels');
+            return;
+        }
+        
+        this.saveState(); // Save state before resizing
+        this.resizeCanvas(width, height);
+        this.saveState(); // Save state after resizing
     }
     
     selectTool(button) {
@@ -535,6 +564,12 @@ class LevelEditor {
     }
     
     render() {
+        // Ensure canvas matches level dimensions
+        if (this.canvas.width !== this.levelData.width || this.canvas.height !== this.levelData.height) {
+            this.canvas.width = this.levelData.width;
+            this.canvas.height = this.levelData.height;
+        }
+        
         // Clear canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         
@@ -591,19 +626,22 @@ class LevelEditor {
         this.ctx.strokeStyle = 'rgba(255,255,255,0.1)';
         this.ctx.lineWidth = 1;
         
+        const levelWidth = this.levelData.width;
+        const levelHeight = this.levelData.height;
+        
         // Vertical lines
-        for (let x = 0; x <= this.canvas.width; x += this.gridSize) {
+        for (let x = 0; x <= levelWidth; x += this.gridSize) {
             this.ctx.beginPath();
             this.ctx.moveTo(x, 0);
-            this.ctx.lineTo(x, this.canvas.height);
+            this.ctx.lineTo(x, levelHeight);
             this.ctx.stroke();
         }
         
         // Horizontal lines
-        for (let y = 0; y <= this.canvas.height; y += this.gridSize) {
+        for (let y = 0; y <= levelHeight; y += this.gridSize) {
             this.ctx.beginPath();
             this.ctx.moveTo(0, y);
-            this.ctx.lineTo(this.canvas.width, y);
+            this.ctx.lineTo(levelWidth, y);
             this.ctx.stroke();
         }
     }
@@ -797,7 +835,9 @@ class LevelEditor {
             reader.onload = (e) => {
                 try {
                     this.levelData = JSON.parse(e.target.result);
-                    this.render();
+                    // Resize canvas to match loaded level dimensions
+                    this.resizeCanvas(this.levelData.width || 3600, this.levelData.height || 600);
+                    this.saveState(); // Save state after loading
                     console.log('Level loaded:', this.levelData);
                 } catch (error) {
                     alert('Error loading level: ' + error.message);
@@ -810,18 +850,20 @@ class LevelEditor {
     
     clearLevel() {
         if (confirm('Are you sure you want to clear the entire level?')) {
+            // Preserve current dimensions
+            const currentWidth = this.levelData.width || 3600;
+            const currentHeight = this.levelData.height || 600;
+            
             this.levelData = {
                 name: 'Custom Level',
-                width: 3600,
-                height: 600,
+                width: currentWidth,
+                height: currentHeight,
                 floors: [],
                 vendors: [],
                 spawners: [],
                 portals: []
             };
             
-            // Add default ground
-            this.addFloorSegment(0, 550, 3600, 50, 'dirt');
             this.saveState(); // Save state after clearing
             this.render();
         }

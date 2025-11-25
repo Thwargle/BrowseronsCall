@@ -290,8 +290,12 @@ window.itemToIconHtml=function(it){
     
     try {
         const iconSrc = window.getItemIconDataURLForItem(it);
+        const isLocked = it.locked === true;
+        const lockIcon = isLocked ? '🔒' : '🔓';
+        const lockClass = isLocked ? 'locked' : '';
     
-        const html = `<img class="itemIcon" src="${iconSrc}" draggable="true" data-id="${it.id}">`;
+        const html = `<img class="itemIcon" src="${iconSrc}" draggable="true" data-id="${it.id}">
+            <button class="item-lock-btn" data-item-id="${it.id}" title="${isLocked ? 'Unlock item' : 'Lock item'}">${lockIcon}</button>`;
     
         return html;
     } catch (error) {
@@ -625,14 +629,77 @@ window.refreshInventoryUI=function(){
                 el.dataset.dragHandlersAdded = 'true';
             }
             
+            // Add locked class to slot if item is locked
+            if (item && item.locked === true) {
+                el.classList.add('locked');
+            } else {
+                el.classList.remove('locked');
+            }
+            
+            // Add lock button click handler FIRST (before image handlers) to capture events
+            const lockBtn = el.querySelector('.item-lock-btn');
+            if (lockBtn) {
+                // Remove any existing handlers by cloning and replacing
+                const newLockBtn = lockBtn.cloneNode(true);
+                lockBtn.parentNode.replaceChild(newLockBtn, lockBtn);
+                
+                // Mark the button to prevent drag
+                newLockBtn.dataset.noDrag = 'true';
+                newLockBtn.style.pointerEvents = 'auto'; // Always allow clicks
+                
+                newLockBtn.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    // Mark the slot to prevent drag
+                    el.dataset.lockButtonClicked = 'true';
+                }, true); // Use capture phase
+                
+                newLockBtn.addEventListener('mouseup', (e) => {
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    // Clear the flag after a short delay
+                    setTimeout(() => {
+                        delete el.dataset.lockButtonClicked;
+                    }, 100);
+                }, true); // Use capture phase
+                
+                newLockBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    if (item && item.id) {
+                        window.toggleItemLock(item.id);
+                    }
+                }, true); // Use capture phase
+            }
+            
             const img = el.querySelector('.itemIcon'); 
             if(img && item){ 
                 // Remove existing event listeners to prevent duplicates
                 const newImg = img.cloneNode(true);
                 img.parentNode.replaceChild(newImg, img);
                 
+                newImg.addEventListener('mousedown', (e) => {
+                    // Don't start drag if clicking on lock button
+                    if (e.target.classList.contains('item-lock-btn') || 
+                        e.target.closest('.item-lock-btn') ||
+                        el.dataset.lockButtonClicked === 'true') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return false;
+                    }
+                });
+                
                 // Add event listeners directly to the new image
                 newImg.addEventListener('dragstart',e=>{
+                    // Don't start drag if clicking on lock button
+                    if (e.target.classList.contains('item-lock-btn') || 
+                        e.target.closest('.item-lock-btn') ||
+                        el.dataset.lockButtonClicked === 'true') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return false;
+                    }
                     console.log('Drag start on inventory item:', newImg.dataset.id);
                     e.dataTransfer.setData('text', newImg.dataset.id);
                     e.dataTransfer.effectAllowed = 'move';
@@ -650,7 +717,7 @@ window.refreshInventoryUI=function(){
                         window.dropItemFromInventory(i);
                     }
                 });
-            } 
+            }
         }); 
     }
     
@@ -1108,10 +1175,72 @@ window.displayInventoryItems=function() {
             const itemHtml = window.itemToIconHtml(item);
             el.innerHTML = itemHtml || '';
             
+            // Add locked class to slot if item is locked
+            if (item.locked === true) {
+                el.classList.add('locked');
+            } else {
+                el.classList.remove('locked');
+            }
+            
+            // Add lock button click handler FIRST (before image handlers) to capture events
+            const lockBtn = el.querySelector('.item-lock-btn');
+            if (lockBtn) {
+                // Remove any existing handlers by cloning and replacing
+                const newLockBtn = lockBtn.cloneNode(true);
+                lockBtn.parentNode.replaceChild(newLockBtn, lockBtn);
+                
+                // Mark the button to prevent drag
+                newLockBtn.dataset.noDrag = 'true';
+                
+                newLockBtn.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    // Mark the slot to prevent drag
+                    el.dataset.lockButtonClicked = 'true';
+                });
+                
+                newLockBtn.addEventListener('mouseup', (e) => {
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    // Clear the flag after a short delay
+                    setTimeout(() => {
+                        delete el.dataset.lockButtonClicked;
+                    }, 100);
+                });
+                
+                newLockBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    if (item && item.id) {
+                        window.toggleItemLock(item.id);
+                    }
+                });
+            }
+            
             // Add event listeners to the new image if it doesn't have them
             const img = el.querySelector('.itemIcon');
             if (img && !img.dataset.eventHandlersAdded) {
+                img.addEventListener('mousedown', (e) => {
+                    // Don't start drag if clicking on lock button
+                    if (e.target.classList.contains('item-lock-btn') || 
+                        e.target.closest('.item-lock-btn') ||
+                        el.dataset.lockButtonClicked === 'true') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return false;
+                    }
+                });
+                
                 img.addEventListener('dragstart', e => {
+                    // Don't start drag if clicking on lock button
+                    if (e.target.classList.contains('item-lock-btn') || 
+                        e.target.closest('.item-lock-btn') ||
+                        el.dataset.lockButtonClicked === 'true') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return false;
+                    }
                     e.dataTransfer.setData('text', img.dataset.id);
                     e.dataTransfer.effectAllowed = 'move';
                 });
@@ -1130,6 +1259,7 @@ window.displayInventoryItems=function() {
             }
         } else {
             el.innerHTML = '';
+            el.classList.remove('locked');
         }
     });
     
@@ -1141,8 +1271,6 @@ window.displayInventoryItems=function() {
     if (equipmentSlots.length === 0) {
         equipmentSlots = document.querySelectorAll('[data-slot]');
     }
-    
-    console.log(`Found ${equipmentSlots.length} equipment slots`);
     
     // Check if window.equip is properly initialized
     if (!window.equip) {
@@ -1179,28 +1307,89 @@ window.displayInventoryItems=function() {
         // Clear slot first to ensure clean state
         el.innerHTML = '';
         
+        // Add locked class to slot if item is locked
+        if (equippedItem && equippedItem.locked === true) {
+            el.classList.add('locked');
+        } else {
+            el.classList.remove('locked');
+        }
+        
         if (equippedItem && typeof equippedItem === 'object' && equippedItem.id) {
             try {
-                // Ensure getItemIconDataURLForItem is available
-                if (typeof window.getItemIconDataURLForItem !== 'function') {
-                    console.error(`[${Date.now()}] getItemIconDataURLForItem function not available`);
-                    return;
+                // Use itemToIconHtml to include lock button
+                const itemHtml = window.itemToIconHtml(equippedItem);
+                if (itemHtml) {
+                    el.innerHTML = itemHtml;
+                } else {
+                    // Fallback to icon only if itemToIconHtml fails
+                    if (typeof window.getItemIconDataURLForItem !== 'function') {
+                        console.error(`[${Date.now()}] getItemIconDataURLForItem function not available`);
+                        return;
+                    }
+                    
+                    const iconSrc = window.getItemIconDataURLForItem(equippedItem);
+                    
+                    if (!iconSrc) {
+                        console.error(`[${Date.now()}] Failed to generate icon for item in slot ${s}:`, equippedItem);
+                        return;
+                    }
+                    
+                    const html = `<img class="itemIcon" src="${iconSrc}" data-id="${equippedItem.id}" draggable="true">`;
+                    el.innerHTML = html;
                 }
                 
-                const iconSrc = window.getItemIconDataURLForItem(equippedItem);
-                
-                if (!iconSrc) {
-                    console.error(`[${Date.now()}] Failed to generate icon for item in slot ${s}:`, equippedItem);
-                    return;
+                // Add lock button click handler for equipment items
+                const lockBtn = el.querySelector('.item-lock-btn');
+                if (lockBtn) {
+                    const newLockBtn = lockBtn.cloneNode(true);
+                    lockBtn.parentNode.replaceChild(newLockBtn, lockBtn);
+                    newLockBtn.style.pointerEvents = 'auto';
+                    
+                    newLockBtn.addEventListener('mousedown', (e) => {
+                        e.stopPropagation();
+                        e.stopImmediatePropagation();
+                        el.dataset.lockButtonClicked = 'true';
+                    }, true);
+                    
+                    newLockBtn.addEventListener('mouseup', (e) => {
+                        e.stopPropagation();
+                        e.stopImmediatePropagation();
+                        setTimeout(() => {
+                            delete el.dataset.lockButtonClicked;
+                        }, 100);
+                    }, true);
+                    
+                    newLockBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.stopImmediatePropagation();
+                        if (equippedItem && equippedItem.id) {
+                            window.toggleItemLock(equippedItem.id);
+                        }
+                    }, true);
                 }
-                
-                const html = `<img class="itemIcon" src="${iconSrc}" data-id="${equippedItem.id}" draggable="true">`;
-                el.innerHTML = html;
                 
                 // Add event listeners immediately after setting innerHTML
                 const img = el.querySelector('.itemIcon');
                 if (img && !img.dataset.eventHandlersAdded) {
+                    img.addEventListener('mousedown', (e) => {
+                        if (e.target.classList.contains('item-lock-btn') || 
+                            e.target.closest('.item-lock-btn') ||
+                            el.dataset.lockButtonClicked === 'true') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            return false;
+                        }
+                    });
+                    
                     img.addEventListener('dragstart', e => {
+                        if (e.target.classList.contains('item-lock-btn') || 
+                            e.target.closest('.item-lock-btn') ||
+                            el.dataset.lockButtonClicked === 'true') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            return false;
+                        }
                         e.dataTransfer.setData('text', img.dataset.id);
                         e.dataTransfer.effectAllowed = 'move';
                     });
@@ -1225,6 +1414,7 @@ window.displayInventoryItems=function() {
         } else {
             // Ensure slot is cleared if no item
             el.innerHTML = '';
+            el.classList.remove('locked');
         }
     });
     
@@ -1272,132 +1462,237 @@ function getRarityColor(rarity) {
     return '#ffffff'; // Common - white
 }
 
-window.openShop=function(){ 
+// Helper function to format slot names for display
+function formatSlotName(slot) {
+    const slotNames = {
+        'head': 'Head',
+        'neck': 'Neck',
+        'shoulders': 'Shoulders',
+        'chest': 'Chest',
+        'waist': 'Waist',
+        'legs': 'Legs',
+        'feet': 'Feet',
+        'wrists': 'Wrists',
+        'hands': 'Hands',
+        'mainhand': 'Main Hand',
+        'offhand': 'Off Hand',
+        'trinket': 'Trinket'
+    };
+    return slotNames[slot] || slot.charAt(0).toUpperCase() + slot.slice(1);
+}
+
+window.openShop=function(defaultTab='inventory'){ 
     shopList.innerHTML=''; 
     
-    // Add Sell All Inventory button at the top right
-    const sellAllHeader = document.createElement('div');
-    sellAllHeader.style.display = 'flex';
-    sellAllHeader.style.justifyContent = 'space-between';
-    sellAllHeader.style.alignItems = 'center';
-    sellAllHeader.style.marginBottom = '15px';
-    sellAllHeader.style.paddingBottom = '10px';
-    sellAllHeader.style.borderBottom = '1px solid #234';
+    const tabConfigs = [
+        { id: 'inventory', label: 'Inventory', contentId: 'tabContentInventory' },
+        { id: 'equipment', label: 'Equipment', contentId: 'tabContentEquipment' },
+        { id: 'buyback', label: 'Buyback', contentId: 'tabContentBuyback' }
+    ];
     
-    const title = document.createElement('h3');
-    title.innerText = 'Vendor';
-    title.style.margin = '0';
+    const tabsWrapper = document.createElement('div');
+    tabsWrapper.className = 'tabs';
+    
+    const tabElements = {};
+    const tabContents = {};
+    
+    tabConfigs.forEach(cfg => {
+        const tab = document.createElement('div');
+        tab.className = 'tab';
+        tab.innerText = cfg.label;
+        tab.dataset.tabId = cfg.id;
+        tab.addEventListener('click', () => activateTab(cfg.id));
+        tabElements[cfg.id] = tab;
+        tabsWrapper.appendChild(tab);
+    });
+    
+    shopList.appendChild(tabsWrapper);
+    
+    tabConfigs.forEach(cfg => {
+        const content = document.createElement('div');
+        content.className = 'tab-content';
+        content.id = cfg.contentId;
+        tabContents[cfg.id] = content;
+        shopList.appendChild(content);
+    });
+    
+    const inventoryContent = tabContents.inventory;
+    const equipmentContent = tabContents.equipment;
+    const buybackContent = tabContents.buyback;
+    
+    // Inventory tab header with Sell All button
+    const inventoryHeader = document.createElement('div');
+    inventoryHeader.style.display = 'flex';
+    inventoryHeader.style.justifyContent = 'space-between';
+    inventoryHeader.style.alignItems = 'center';
+    inventoryHeader.style.marginBottom = '15px';
+    inventoryHeader.style.paddingBottom = '10px';
+    inventoryHeader.style.borderBottom = '1px solid #234';
+    
+    const inventoryTitle = document.createElement('h3');
+    inventoryTitle.innerText = 'Inventory Items';
+    inventoryTitle.style.margin = '0';
     
     const sellAllButton = document.createElement('button');
     sellAllButton.innerText = 'Sell All Inventory';
     sellAllButton.className = 'sell-all-button';
-    
     sellAllButton.addEventListener('click', () => {
         if (confirm('Are you sure you want to sell ALL items in your inventory? This cannot be undone!')) {
             window.sellAllInventory();
         }
     });
     
-    sellAllHeader.appendChild(title);
-    sellAllHeader.appendChild(sellAllButton);
-    shopList.appendChild(sellAllHeader);
+    inventoryHeader.appendChild(inventoryTitle);
+    inventoryHeader.appendChild(sellAllButton);
+    inventoryContent.appendChild(inventoryHeader);
     
-    // Add inventory items
-    if (window.bag && window.bag.length > 0) {
-        const inventoryHeader = document.createElement('div');
-        inventoryHeader.className = 'shop-section-header';
-        inventoryHeader.innerText = 'Inventory Items';
-        inventoryHeader.style.fontWeight = 'bold';
-        inventoryHeader.style.marginTop = '10px';
-        inventoryHeader.style.marginBottom = '5px';
-        shopList.appendChild(inventoryHeader);
+    // Inventory items list - show all slots
+    const bagSize = window.bag ? window.bag.length : window.BAG_SLOTS || 12;
+    for (let idx = 0; idx < bagSize; idx++) {
+        const it = window.bag && window.bag[idx] ? window.bag[idx] : null;
+        const row = document.createElement('div');
+        row.className = 'row';
+        const left = document.createElement('div');
+        const right = document.createElement('div');
         
-        window.bag.forEach((it,idx)=>{ 
-            if(!it) return; 
-            const row=document.createElement('div'); 
-            row.className='row'; 
-            const left=document.createElement('div'); 
+        if (it) {
             const rarityColor = getRarityColor(it.rarity);
-            left.innerHTML = `<span style="color: ${rarityColor}">${it.name}</span>`;
-            const right=document.createElement('div'); 
-            right.innerHTML = `${it.value||0} <button>Sell</button>`; 
-            right.querySelector('button').addEventListener('click', ()=>{ 
-                if (window.isConnected && window.isConnected()) {
-                    // Send sell request to server
-                    if (typeof window.wsSend === 'function') {
-                        window.wsSend({
-                            type: 'sellItem',
-                            itemId: it.id,
-                            fromWhere: 'bag',
-                            fromIndex: idx,
-                            fromSlot: null
-                        });
+            const lockNote = it.locked ? '<span class="locked-note">🔒 LOCKED</span>' : '';
+            left.innerHTML = `<span style="color: ${rarityColor}">${it.name}</span>${lockNote}`;
+            if (!it.locked) {
+                right.innerHTML = `${it.value||0} <button>Sell</button>`;
+                right.querySelector('button').addEventListener('click', ()=>{ 
+                    if (window.isConnected && window.isConnected()) {
+                        if (typeof window.wsSend === 'function') {
+                            window.wsSend({
+                                type: 'sellItem',
+                                itemId: it.id,
+                                fromWhere: 'bag',
+                                fromIndex: idx,
+                                fromSlot: null
+                            });
+                        } else {
+                            console.warn('wsSend function not available');
+                        }
                     } else {
-                        console.warn('wsSend function not available');
+                        window.player.pyreals += (it.value||0); 
+                        window.bag[idx]=null; 
+                        window.refreshInventoryUI(); 
                     }
-                } else {
-                    // Offline mode - update local inventory
-                    window.player.pyreals += (it.value||0); 
-                    window.bag[idx]=null; 
-                    window.refreshInventoryUI(); 
-                    // Item sold silently 
-                }
-                // Keep vendor window open after selling - refresh the shop to show updated inventory
-                window.openShop();
-            }); 
-            row.appendChild(left); 
-            row.appendChild(right); 
-            shopList.appendChild(row); 
-        });
+                    window.openShop(window._shopActiveTab || 'inventory');
+                }); 
+            } else {
+                right.innerHTML = `${it.value||0}`;
+            }
+        } else {
+            left.innerHTML = '<span style="color: #666; font-style: italic;">No Item</span>';
+            right.innerHTML = '-';
+        }
+        
+        row.appendChild(left);
+        row.appendChild(right);
+        inventoryContent.appendChild(row);
     }
     
-    // Add equipped items
-    if (window.equip && typeof window.equip === 'object') {
-        const equipHeader = document.createElement('div');
-        equipHeader.className = 'shop-section-header';
-        equipHeader.innerText = 'Equipped Items';
-        equipHeader.style.fontWeight = 'bold';
-        equipHeader.style.marginTop = '20px';
-        equipHeader.style.marginBottom = '5px';
-        shopList.appendChild(equipHeader);
+    // Equipment tab header
+    const equipmentHeader = document.createElement('div');
+    equipmentHeader.style.display = 'flex';
+    equipmentHeader.style.justifyContent = 'space-between';
+    equipmentHeader.style.alignItems = 'center';
+    equipmentHeader.style.marginBottom = '15px';
+    equipmentHeader.style.paddingBottom = '10px';
+    equipmentHeader.style.borderBottom = '1px solid #234';
+    
+    const equipmentTitle = document.createElement('h3');
+    equipmentTitle.innerText = 'Equipment Items';
+    equipmentTitle.style.margin = '0';
+    
+    equipmentHeader.appendChild(equipmentTitle);
+    equipmentContent.appendChild(equipmentHeader);
+    
+    // Equipment items list - show all slots
+    const equipmentSlots = ['head','neck','shoulders','chest','waist','legs','feet','wrists','hands','mainhand','offhand','trinket'];
+    equipmentSlots.forEach(slot => {
+        const it = window.equip && window.equip[slot] ? window.equip[slot] : null;
+        const row = document.createElement('div');
+        row.className = 'row';
+        const left = document.createElement('div');
+        const right = document.createElement('div');
         
-        Object.entries(window.equip).forEach(([slot, it]) => {
-            if (!it) return;
-            const row = document.createElement('div');
-            row.className = 'row';
-            const left = document.createElement('div');
+        if (it) {
             const rarityColor = getRarityColor(it.rarity);
-            left.innerHTML = `<span style="color: ${rarityColor}">${it.name}</span>`;
-            const right = document.createElement('div');
-            right.innerHTML = `${it.value||0} <button>Sell</button>`;
-            right.querySelector('button').addEventListener('click', () => {
-                if (window.isConnected && window.isConnected()) {
-                    // Send sell request to server
-                    if (typeof window.wsSend === 'function') {
-                        window.wsSend({
-                            type: 'sellItem',
-                            itemId: it.id,
-                            fromWhere: 'equip',
-                            fromIndex: null,
-                            fromSlot: slot
-                        });
+            const lockNote = it.locked ? '<span class="locked-note">🔒 LOCKED</span>' : '';
+            left.innerHTML = `<span style="color: ${rarityColor}">${formatSlotName(slot)}: ${it.name}</span>${lockNote}`;
+            if (!it.locked) {
+                right.innerHTML = `${it.value||0} <button>Sell</button>`;
+                right.querySelector('button').addEventListener('click', () => {
+                    if (window.isConnected && window.isConnected()) {
+                        if (typeof window.wsSend === 'function') {
+                            window.wsSend({
+                                type: 'sellItem',
+                                itemId: it.id,
+                                fromWhere: 'equip',
+                                fromIndex: null,
+                                fromSlot: slot
+                            });
+                        } else {
+                            console.warn('wsSend function not available');
+                        }
                     } else {
-                        console.warn('wsSend function not available');
+                        window.player.pyreals += (it.value||0);
+                        window.equip[slot] = null;
+                        window.refreshInventoryUI();
                     }
-                } else {
-                    // Offline mode - update local equipment
-                    window.player.pyreals += (it.value||0);
-                    window.equip[slot] = null;
-                    window.refreshInventoryUI();
-                    // Item sold silently
-                }
-                // Keep vendor window open after selling - refresh the shop to show updated inventory
-                window.openShop();
-            });
-            row.appendChild(left);
-            row.appendChild(right);
-            shopList.appendChild(row);
+                    window.openShop(window._shopActiveTab || 'equipment');
+                });
+            } else {
+                right.innerHTML = `${it.value||0}`;
+            }
+        } else {
+            left.innerHTML = `<span style="color: #666; font-style: italic;">${formatSlotName(slot)}: No Item</span>`;
+            right.innerHTML = '-';
+        }
+        
+        row.appendChild(left);
+        row.appendChild(right);
+        equipmentContent.appendChild(row);
+    });
+    
+    // Buyback tab content
+    const buybackInfo = document.createElement('div');
+    buybackInfo.className = 'small';
+    buybackInfo.innerText = 'Buy back recently sold items here. Items cost the same amount you sold them for.';
+    buybackInfo.style.marginBottom = '8px';
+    buybackContent.appendChild(buybackInfo);
+    
+    const buybackList = document.createElement('div');
+    buybackList.id = 'buybackList';
+    buybackList.innerHTML = '<div class="row"><div>No buyback items available.</div><div></div></div>';
+    buybackContent.appendChild(buybackList);
+    
+    function activateTab(tabId) {
+        Object.entries(tabContents).forEach(([id, content]) => {
+            if (id === tabId) {
+                content.classList.add('active');
+            } else {
+                content.classList.remove('active');
+            }
         });
+        Object.entries(tabElements).forEach(([id, tab]) => {
+            if (id === tabId) {
+                tab.classList.add('active');
+            } else {
+                tab.classList.remove('active');
+            }
+        });
+        window._shopActiveTab = tabId;
+    }
+    
+    const initialTab = defaultTab || window._shopActiveTab || 'inventory';
+    activateTab(initialTab);
+    
+    if (window.isConnected && window.isConnected() && typeof window.wsSend === 'function') {
+        window.wsSend({ type: 'getBuybackItems' });
     }
     
     shopPanel.style.display='block'; 
@@ -1407,11 +1702,19 @@ window.openShop=function(){
 window.sellAllInventory = function() {
     let totalValue = 0;
     let itemsSold = 0;
+    let lockedItemsCount = 0;
     
-    // Calculate total value and count items
+    // Calculate total value and count items (excluding locked items)
+    // Explicitly check for locked === true to handle undefined/false cases
     if (window.bag && window.bag.length > 0) {
         window.bag.forEach((item, idx) => {
             if (item && item.value) {
+                // Check if item is locked - be very explicit about this
+                const isLocked = item.locked === true || item.locked === 'true';
+                if (isLocked) {
+                    lockedItemsCount++;
+                    return; // Skip this item
+                }
                 totalValue += item.value;
                 itemsSold++;
             }
@@ -1419,13 +1722,12 @@ window.sellAllInventory = function() {
     }
     
     if (itemsSold === 0) {
-        alert('No items to sell in inventory!');
+        alert('No items to sell in inventory! (Locked items are excluded)');
         return;
     }
     
     if (window.isConnected && window.isConnected()) {
         // Send sell all request to server
-        console.log('Sending sellAllInventory request to server...');
         if (typeof window.wsSend === 'function') {
             const result = window.wsSend({
                 type: 'sellAllInventory',
@@ -1436,10 +1738,16 @@ window.sellAllInventory = function() {
             console.warn('wsSend function not available');
         }
     } else {
-        // Offline mode - sell all items locally
+        // Offline mode - sell all items locally (excluding locked items)
+        // Explicitly check for locked === true to handle undefined/false cases
         if (window.bag && window.bag.length > 0) {
             window.bag.forEach((item, idx) => {
                 if (item && item.value) {
+                    // Check if item is locked - be very explicit about this
+                    const isLocked = item.locked === true || item.locked === 'true';
+                    if (isLocked) {
+                        return; // Skip this item
+                    }
                     window.player.pyreals += item.value;
                     window.bag[idx] = null;
                 }
@@ -1453,6 +1761,46 @@ window.sellAllInventory = function() {
     
     // Keep vendor window open after selling all - refresh the shop to show updated inventory
     window.openShop();
+};
+
+// Function to toggle item lock status
+window.toggleItemLock = function(itemId) {
+    // Find the item in bag or equipment
+    const itemLocation = window.findItemById(itemId);
+    if (!itemLocation || !itemLocation.item) {
+        return;
+    }
+    
+    const item = itemLocation.item;
+    const newLockStatus = !item.locked;
+    
+    if (window.isConnected && window.isConnected()) {
+        // Send lock toggle request to server
+        if (typeof window.wsSend === 'function') {
+            window.wsSend({
+                type: 'toggleItemLock',
+                itemId: itemId,
+                locked: newLockStatus
+            });
+            
+            // Optimistically update the UI immediately
+            item.locked = newLockStatus;
+            if (window.displayInventoryItems) {
+                window.displayInventoryItems();
+            }
+            // Also refresh vendor window if open
+            const shopPanel = document.getElementById('shopPanel');
+            if (shopPanel && shopPanel.style.display === 'block') {
+                if (typeof window.openShop === 'function') {
+                    window.openShop(window._shopActiveTab || 'inventory');
+                }
+            }
+        }
+    } else {
+        // Offline mode - update locally
+        item.locked = newLockStatus;
+        window.refreshInventoryUI();
+    }
 };
 
 // Panel scrollbar management

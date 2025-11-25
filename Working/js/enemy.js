@@ -1,5 +1,14 @@
 // enemy.js - Enemy management and NPC color generation
 const { RARITY_BONUSES, determineRarity } = require('./rarity');
+const { determinePhysicalDamageType } = require('./loot');
+
+function computeWeaponValue(level, rarity) {
+    const rarityMultiplier = rarity === 'Legendary' ? 7 :
+        rarity === 'Epic' ? 3.5 :
+        rarity === 'Rare' ? 2.5 :
+        rarity === 'Uncommon' ? 1.8 : 1;
+    return Math.max(5, Math.round(level * 20 * rarityMultiplier));
+}
 
 // Human first names for enemies
 const ENEMY_NAMES = [
@@ -65,10 +74,152 @@ function generateNPCColors() {
     };
 }
 
+// Function to generate equipment for enemies based on type
+function generateEnemyEquipment(enemyType, enemyLevel) {
+    const equip = {
+        head: null, neck: null, shoulders: null, chest: null,
+        waist: null, legs: null, feet: null, wrists: null,
+        hands: null, mainhand: null, offhand: null, trinket: null
+    };
+    
+    // Base stats for enemy equipment (scaled to level)
+    const baseStatValue = Math.round(enemyLevel * 1.5);
+    const baseDamage = enemyLevel * 3;
+    
+    if (enemyType === 'basic') {
+        // Basic enemies use hands (unarmed) - no weapon equipped
+        // They fight with their bare hands
+        equip.mainhand = null;
+        equip.offhand = null;
+    } else if (enemyType === 'elite') {
+        // Elite enemies use a single 1-handed weapon
+        const oneHandedWeapons = ['Sword', 'Dagger', 'Axe', 'Mace', 'Rapier', 'Saber'];
+        const weaponName = oneHandedWeapons[Math.floor(Math.random() * oneHandedWeapons.length)];
+        
+        equip.mainhand = {
+            id: `enemy-weapon-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            name: `${weaponName} of the Elite`,
+            type: 'weapon',
+            level: enemyLevel,
+            rarity: 'Uncommon',
+            subtype: weaponName,
+            stats: { Strength: baseStatValue, Quickness: Math.round(baseStatValue * 0.6) },
+            dmgMin: baseDamage,
+            dmgMax: Math.round(baseDamage * 1.3),
+            twoHanded: false,
+            physicalDamageType: determinePhysicalDamageType(weaponName),
+            elementalDamageType: null,
+            value: computeWeaponValue(enemyLevel, 'Uncommon')
+        };
+    } else if (enemyType === 'spellcaster') {
+        // Spellcasters use a wand to shoot projectiles
+        equip.mainhand = {
+            id: `enemy-wand-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            name: `Wand of the Caster`,
+            type: 'weapon',
+            level: enemyLevel,
+            rarity: 'Uncommon',
+            subtype: 'Wand',
+            stats: { Focus: baseStatValue, Mana: Math.round(baseStatValue * 0.8) },
+            dmgMin: baseDamage,
+            dmgMax: Math.round(baseDamage * 1.2),
+            twoHanded: true,
+            physicalDamageType: determinePhysicalDamageType('Wand'),
+            elementalDamageType: null,
+            value: computeWeaponValue(enemyLevel, 'Uncommon')
+        };
+    } else if (enemyType === 'waterwisp' || enemyType === 'firewisp' || enemyType === 'earthwisp' || enemyType === 'windwisp') {
+        // Wisp enemies don't use equipment - they're sprite-based
+        // They attack with water magic
+        equip.mainhand = null;
+        equip.offhand = null;
+    } else if (enemyType === 'boss') {
+        // Boss monsters use a 2-handed weapon
+        const twoHandedWeapons = ['Spear', 'Staff', 'Wand', 'Halberd', 'Warhammer', 'Battleaxe'];
+        const weaponName = twoHandedWeapons[Math.floor(Math.random() * twoHandedWeapons.length)];
+        
+        equip.mainhand = {
+            id: `enemy-weapon-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            name: `${weaponName} of the Boss`,
+            type: 'weapon',
+            level: enemyLevel,
+            rarity: 'Rare',
+            subtype: weaponName,
+            stats: { Strength: Math.round(baseStatValue * 1.2), Endurance: Math.round(baseStatValue * 0.8) },
+            dmgMin: Math.round(baseDamage * 1.3),
+            dmgMax: Math.round(baseDamage * 1.6),
+            twoHanded: true,
+            physicalDamageType: determinePhysicalDamageType(weaponName),
+            elementalDamageType: null,
+            value: computeWeaponValue(enemyLevel, 'Rare')
+        };
+        // Two-handed weapons occupy both slots
+        equip.offhand = equip.mainhand;
+    }
+    
+    return equip;
+}
+
+// Function to calculate enemy speed based on level and equipment
+function calculateEnemySpeed(enemyLevel, enemyEquip) {
+    // Base speed with randomization (80% to 120% of base)
+    const baseSpeed = 180 + (enemyLevel * 20); // Base speed scales with level
+    const randomMultiplier = 0.8 + (Math.random() * 0.4); // Random between 0.8 and 1.2
+    let speed = baseSpeed * randomMultiplier;
+    
+    // Equipment bonuses to speed
+    if (enemyEquip && enemyEquip.mainhand && enemyEquip.mainhand.stats) {
+        const stats = enemyEquip.mainhand.stats;
+        // Quickness increases speed
+        if (stats.Quickness) {
+            speed += stats.Quickness * 8;
+        }
+        // Two-handed weapons are slower
+        if (enemyEquip.mainhand.twoHanded) {
+            speed *= 0.85; // 15% slower
+        }
+    }
+    
+    return Math.round(speed);
+}
+
+// Function to calculate enemy damage based on level and equipment
+function calculateEnemyDamage(enemyLevel, enemyType, enemyEquip) {
+    let baseDamage = 10 + (enemyLevel * 5);
+    
+    if (enemyEquip && enemyEquip.mainhand) {
+        const weapon = enemyEquip.mainhand;
+        if (weapon.dmgMin && weapon.dmgMax) {
+            // Use weapon damage range
+            baseDamage = weapon.dmgMin + Math.floor(Math.random() * (weapon.dmgMax - weapon.dmgMin + 1));
+        }
+        
+        // Add stat bonuses
+        if (weapon.stats) {
+            if (weapon.stats.Strength) {
+                baseDamage += Math.round(weapon.stats.Strength * 0.5);
+            }
+            if (weapon.stats.Focus && enemyType === 'spellcaster') {
+                baseDamage += Math.round(weapon.stats.Focus * 0.6);
+            }
+        }
+    }
+    
+    return Math.round(baseDamage);
+}
+
 // Function to create a new enemy
 function createEnemy(x, y, level = 1, type = 'basic') {
-    const name = getRandomEnemyName();
+    // Wisp enemies always use the fixed name based on type
+    const name = type === 'waterwisp' ? 'Water Wisp' : 
+                 type === 'firewisp' ? 'Fire Wisp' : 
+                 type === 'earthwisp' ? 'Earth Wisp' : 
+                 type === 'windwisp' ? 'Wind Wisp' : 
+                 getRandomEnemyName();
     const colors = generateNPCColors();
+    const equip = generateEnemyEquipment(type, level);
+    const speed = calculateEnemySpeed(level, equip);
+    const attackPower = calculateEnemyDamage(level, type, equip);
     
     const enemy = {
         id: `enemy_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -83,13 +234,32 @@ function createEnemy(x, y, level = 1, type = 'basic') {
         type: type,
         health: 50 + (level * 25),
         maxHealth: 50 + (level * 25),
-        attackPower: 10 + (level * 5),
+        attackPower: attackPower,
         attackCooldown: 0,
-        colors: colors,
-        weaponType: type === 'spellcaster' ? 'Fireball' : 'Claw',
+        attackAnimTime: 0, // Track attack animation
+        facing: 'right', // Track facing direction
+        colors: (type === 'waterwisp' || type === 'firewisp' || type === 'earthwisp' || type === 'windwisp') ? null : colors, // Wisp doesn't use colors
+        equip: equip,
+        speed: speed, // Store speed for movement
+        weaponType: type === 'spellcaster' ? 'Fireball' : 
+                    type === 'waterwisp' ? 'Water' : 
+                    type === 'firewisp' ? 'Fire' : 
+                    type === 'earthwisp' ? 'Earth' : 
+                    type === 'windwisp' ? 'Wind' : 
+                    (equip.mainhand ? equip.mainhand.subtype : 'Claw'),
         respawnAt: Date.now() + 10000,
         visibilityRange: 500
     };
+    
+    // Wisp specific properties
+    if (type === 'waterwisp' || type === 'firewisp' || type === 'earthwisp' || type === 'windwisp') {
+        enemy.attackRange = 100; // Attack range for wisp (slightly larger than stop distance)
+        enemy.hurtAnimTime = 0; // Track hurt animation
+        enemy.dieAnimProgress = 0; // Track death animation
+        enemy._attackDamageApplied = false; // Track if damage has been applied for current attack
+        enemy._pendingAttackDamage = null; // Store pending damage to apply at end of animation
+        enemy._pendingAttackTarget = null; // Store target player for pending attack
+    }
     
     return enemy;
 }
@@ -102,5 +272,8 @@ module.exports = {
     getRandomEnemyName,
     determineRarity,
     generateNPCColors,
-    createEnemy
+    createEnemy,
+    generateEnemyEquipment,
+    calculateEnemySpeed,
+    calculateEnemyDamage
 };

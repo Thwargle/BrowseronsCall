@@ -37,7 +37,7 @@
       "id": "vendor_1",
       "name": "Merchant",
       "x": 600,
-      "y": 200,
+      "y": 486,
       "width": 48,
       "height": 64
     }
@@ -88,6 +88,54 @@
       "visibilityRange": 600,
       "minLevel": 4,
       "maxLevel": 6,
+      "currentEnemyId": null,
+      "respawnAt": 0
+    },
+    {
+      "id": "sp_5",
+      "x": 900,
+      "y": 486,
+      "type": "waterwisp",
+      "respawnTime": 8000,
+      "visibilityRange": 400,
+      "minLevel": 2,
+      "maxLevel": 4,
+      "currentEnemyId": null,
+      "respawnAt": 0
+    },
+    {
+      "id": "sp_6",
+      "x": 1500,
+      "y": 486,
+      "type": "firewisp",
+      "respawnTime": 8000,
+      "visibilityRange": 400,
+      "minLevel": 2,
+      "maxLevel": 4,
+      "currentEnemyId": null,
+      "respawnAt": 0
+    },
+    {
+      "id": "sp_7",
+      "x": 2100,
+      "y": 486,
+      "type": "earthwisp",
+      "respawnTime": 8000,
+      "visibilityRange": 400,
+      "minLevel": 2,
+      "maxLevel": 4,
+      "currentEnemyId": null,
+      "respawnAt": 0
+    },
+    {
+      "id": "sp_8",
+      "x": 2700,
+      "y": 486,
+      "type": "windwisp",
+      "respawnTime": 8000,
+      "visibilityRange": 400,
+      "minLevel": 2,
+      "maxLevel": 4,
       "currentEnemyId": null,
       "respawnAt": 0
     }

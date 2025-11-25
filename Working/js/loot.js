@@ -69,13 +69,26 @@ const ELEMENTAL_PREFIXES = {
     'Frost': ['Freezing', 'Icy', 'Frostbitten', 'Glacial']
 };
 
-// Function to determine if a weapon is two-handed
+const TWO_HANDED_WEAPON_TYPES = [
+    'Spear',
+    'Javelin',
+    'Trident',
+    'Pike',
+    'Staff',
+    'Wand',
+    'Halberd',
+    'Bow',
+    'Crossbow',
+    'Longsword',
+    'Greatsword',
+    'Warhammer',
+    'Battleaxe',
+    'Maul'
+];
+
 function isTwoHandedWeapon(weaponName) {
     if (!weaponName) return false;
-    
-    // Two-handed weapons are longer weapons that require both hands
-    const twoHandedWeapons = ['Spear', 'Javelin', 'Trident', 'Pike', 'Staff', 'Halberd', 'Bow', 'Crossbow'];
-    return twoHandedWeapons.includes(weaponName);
+    return TWO_HANDED_WEAPON_TYPES.includes(weaponName);
 }
 
 // Helper function to check if an item is two-handed (works with item objects or weapon names)
@@ -269,7 +282,7 @@ function generateLoot(enemyType, enemyLevel) {
             const slashingWeapons = ['Sword', 'Axe', 'Katana', 'Battleaxe', 'Halberd', 'Scimitar', 'Longsword', 'Greatsword'];
             const bludgeoningWeapons = ['Mace', 'Hammer', 'Warhammer', 'Club', 'Maul', 'Flail'];
             const piercingWeapons = ['Dagger', 'Rapier', 'Spear', 'Bow', 'Crossbow', 'Javelin', 'Trident'];
-            const allWeapons = [...slashingWeapons, ...bludgeoningWeapons, ...piercingWeapons, 'Staff', 'Wand']; // Staff/Wand are special
+            const allWeapons = [...slashingWeapons, ...bludgeoningWeapons, ...piercingWeapons, 'Wand']; // Wand is special
             
             // Weight weapons more evenly across damage types (33% each for better balance)
             const typeRoll = Math.random();
@@ -284,14 +297,14 @@ function generateLoot(enemyType, enemyLevel) {
                 weaponName = bludgeoningWeapons[Math.floor(Math.random() * bludgeoningWeapons.length)];
                 selectedType = 'bludgeoning';
             } else {
-                // 34% chance for piercing (includes Staff/Wand which are special)
-                // 90% of piercing pool is actual piercing, 10% is Staff/Wand
+                // 34% chance for piercing (includes Wand which is special)
+                // 90% of piercing pool is actual piercing, 10% is Wand
                 if (typeRoll < 0.97) {
                     weaponName = piercingWeapons[Math.floor(Math.random() * piercingWeapons.length)];
                     selectedType = 'piercing';
                 } else {
-                    // 3% chance (10% of 30%) for Staff/Wand
-                    weaponName = Math.random() < 0.5 ? 'Staff' : 'Wand';
+                    // 3% chance (10% of 30%) for Wand
+                    weaponName = 'Wand';
                     selectedType = 'magic';
                 }
             }
@@ -347,7 +360,7 @@ function generateLoot(enemyType, enemyLevel) {
                 secondaryStats = { Quickness: Math.round(baseStatValue * 0.8) };
             } 
             // Magic/Focus weapons
-            else if (['Staff', 'Wand'].includes(weaponName)) {
+            else if (weaponName === 'Wand') {
                 primaryStats = { Focus: baseStatValue + bonusStatValue };
                 secondaryStats = { Mana: Math.round(baseStatValue * 0.8) };
             } 
@@ -375,7 +388,7 @@ function generateLoot(enemyType, enemyLevel) {
                 stats: { ...primaryStats, ...secondaryStats },
                 dmgMin: dmgMin,
                 dmgMax: dmgMax,
-                value: Math.round(level * 15 * (rarity === 'Legendary' ? 7 : rarity === 'Epic' ? 3 : rarity === 'Rare' ? 2 : rarity === 'Uncommon' ? 1.5 : 1)),
+                value: Math.max(5, Math.round(level * 20 * (rarity === 'Legendary' ? 7 : rarity === 'Epic' ? 3.5 : rarity === 'Rare' ? 2.5 : rarity === 'Uncommon' ? 1.8 : 1))),
                 icon: null,
                 subtype: weaponName,
                 physicalDamageType: physicalDamageType, // Ensure physical damage type is set
@@ -383,7 +396,7 @@ function generateLoot(enemyType, enemyLevel) {
                 twoHanded: isTwoHandedWeapon(weaponName) // Mark if weapon is two-handed
             };
             
-            // Verify damage type was set correctly (Staff/Wand are special - they're magic type but have Slashing physical damage)
+            // Verify damage type was set correctly (Wand is special - it's magic type but has Slashing physical damage)
             if (!dropItem.physicalDamageType) {
                 console.error(`ERROR: Weapon ${weaponName} missing physicalDamageType`);
             } else if (dropItem.physicalDamageType === 'Slashing' && selectedType !== 'slashing' && selectedType !== 'magic') {
@@ -454,7 +467,7 @@ function generateLoot(enemyType, enemyLevel) {
                 short: `${rarity} ${slot} armor piece with enhanced protection`,
                 slot: slot,
                 stats: { ...primaryStats, ...secondaryStats },
-                value: Math.round(level * 12 * (rarity === 'Legendary' ? 7 : rarity === 'Epic' ? 3 : rarity === 'Rare' ? 2 : rarity === 'Uncommon' ? 1.5 : 1)),
+                value: Math.max(5, Math.round(level * 16 * (rarity === 'Legendary' ? 7 : rarity === 'Epic' ? 3.5 : rarity === 'Rare' ? 2.5 : rarity === 'Uncommon' ? 1.8 : 1))),
                 icon: null,
                 colors: colors
             };
@@ -499,5 +512,6 @@ module.exports = {
     generateLoot,
     createTestSword,
     isTwoHandedWeapon,
-    checkIfTwoHanded
+    checkIfTwoHanded,
+    determinePhysicalDamageType
 };

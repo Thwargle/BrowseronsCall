@@ -1,11 +1,11 @@
 {
   "id": "Thwargle",
   "name": "Thwargle",
-  "x": 544.0337599999926,
+  "x": 407.64774999997553,
   "y": 486,
-  "health": 1137,
-  "maxHealth": 1137,
-  "pyreals": 747,
+  "health": 1142,
+  "maxHealth": 1142,
+  "pyreals": 53453,
   "equip": {
     "head": {
       "id": "armor-1762230496812-8vojcmi7l",
@@ -33,20 +33,29 @@
       }
     },
     "neck": {
-      "id": "armor-1756928269158-ils7r7h3b",
-      "name": "Exceptional Neck of the Hero",
+      "id": "armor-1763068498277-bjk87t705",
+      "name": "Divine Neck of the Legend",
       "type": "armor",
-      "level": 4,
-      "rarity": "Epic",
-      "short": "Epic neck armor piece with enhanced protection",
+      "level": 3,
+      "rarity": "Legendary",
+      "short": "Legendary neck armor piece with enhanced protection",
       "slot": "neck",
       "stats": {
-        "Endurance": 12,
-        "Quickness": 7,
-        "Coordination": 3
+        "Endurance": 13,
+        "Health": 5,
+        "Coordination": 2
       },
-      "value": 144,
-      "icon": null
+      "value": 252,
+      "icon": null,
+      "colors": {
+        "fill": "#FF69B4",
+        "edge": "#C71585",
+        "legendary": true,
+        "gradient": {
+          "color1": "#FF69B4",
+          "color2": "#4169E1"
+        }
+      }
     },
     "shoulders": {
       "id": "armor-1762226001158-sj6eh5is0",
@@ -74,27 +83,26 @@
       }
     },
     "chest": {
-      "id": "armor-1761978513747-pasb0vh7u",
-      "name": "Divine Chest of the Legend",
+      "id": "armor-1763068619413-xg1xcd9cl",
+      "name": "Immortal Chest of the Legend",
       "type": "armor",
-      "level": 6,
+      "level": 3,
       "rarity": "Legendary",
       "short": "Legendary chest armor piece with enhanced protection",
       "slot": "chest",
       "stats": {
-        "Focus": 17,
-        "Mana": 8,
-        "Endurance": 6
+        "Endurance": 12,
+        "Coordination": 3
       },
-      "value": 504,
+      "value": 252,
       "icon": null,
       "colors": {
-        "fill": "#ff4500",
-        "edge": "#dc143c",
+        "fill": "#FF6347",
+        "edge": "#8B0000",
         "legendary": true,
         "gradient": {
-          "color1": "#ff4500",
-          "color2": "#32CD32"
+          "color1": "#FF6347",
+          "color2": "#FF69B4"
         }
       }
     },
@@ -131,19 +139,29 @@
       "icon": null
     },
     "feet": {
-      "id": "armor-1756945459423-9ale0rcfk",
-      "name": "Perfect Feet of the Elite",
+      "id": "armor-1764048297983-cwvjs0mzj",
+      "name": "Immortal Feet of the Ancients",
       "type": "armor",
       "level": 6,
-      "rarity": "Epic",
-      "short": "Epic feet armor piece with enhanced protection",
+      "rarity": "Legendary",
+      "short": "Legendary feet armor piece with enhanced protection",
       "slot": "feet",
       "stats": {
-        "Endurance": 13,
-        "Coordination": 6
+        "Focus": 16,
+        "Mana": 8,
+        "Endurance": 6
       },
-      "value": 216,
-      "icon": null
+      "value": 672,
+      "icon": null,
+      "colors": {
+        "fill": "#ff4500",
+        "edge": "#dc143c",
+        "legendary": true,
+        "gradient": {
+          "color1": "#ff4500",
+          "color2": "#4169E1"
+        }
+      }
     },
     "wrists": {
       "id": "armor-1756946374429-84zv8zcbq",
@@ -178,32 +196,142 @@
       "icon": null
     },
     "mainhand": {
-      "id": "weapon-1762226055896-6rf6fp9n1",
-      "name": "Electric Immortal Katana of the Ancients",
+      "id": "weapon-1764041598554-zj64ub75x",
+      "name": "Quality Wand of the Veteran",
       "type": "weapon",
       "level": 5,
-      "rarity": "Legendary",
-      "short": "Legendary katana with enhanced properties",
+      "rarity": "Uncommon",
+      "short": "Uncommon wand with enhanced properties",
       "stats": {
-        "Quickness": 18,
-        "Coordination": 6
+        "Focus": 10,
+        "Mana": 6
       },
-      "dmgMin": 38,
-      "dmgMax": 56,
-      "value": 525,
+      "dmgMin": 18,
+      "dmgMax": 27,
+      "value": 180,
       "icon": null,
-      "subtype": "Katana",
+      "subtype": "Wand",
       "physicalDamageType": "Slashing",
-      "elementalDamageType": "Lightning"
+      "elementalDamageType": null,
+      "twoHanded": true
     },
-    "offhand": null,
+    "offhand": {
+      "id": "weapon-1764041598554-zj64ub75x",
+      "name": "Quality Wand of the Veteran",
+      "type": "weapon",
+      "level": 5,
+      "rarity": "Uncommon",
+      "short": "Uncommon wand with enhanced properties",
+      "stats": {
+        "Focus": 10,
+        "Mana": 6
+      },
+      "dmgMin": 18,
+      "dmgMax": 27,
+      "value": 180,
+      "icon": null,
+      "subtype": "Wand",
+      "physicalDamageType": "Slashing",
+      "elementalDamageType": null,
+      "twoHanded": true
+    },
     "trinket": null
   },
   "inventory": [
-    null,
-    null,
-    null,
-    null,
+    {
+      "id": "weapon-1763507491653-wn7rn1thl",
+      "name": "Freezing Divine Sword of the Ancients",
+      "type": "weapon",
+      "level": 3,
+      "rarity": "Legendary",
+      "short": "Legendary sword with enhanced properties",
+      "stats": {
+        "Strength": 15,
+        "Endurance": 4
+      },
+      "dmgMin": 23,
+      "dmgMax": 34,
+      "value": 315,
+      "icon": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACIklEQVR4AexVvS5EURCeXUIsDTUFnSg3FJqtVTyCB1DzDDyCyiPo1BoF2VKJB5DQLEJwZYpJJnPP3bnnnJXcnTubfJlz7sydn2++m+0W56tFm9GFlv+cgJYLAEoKWDj+BsuQCy8RIAOs350A6xvW5nMFaAxZ97sCrG9Ym88VoDFk3e8KsL5hOZ+8uwIkI227uwLatnE5rytAMpJzLz5HIJGTL/Vd3oOWY6IKKH6+QEJr4D/8vAct/0QJ0Io10Z9EwO/7C4RAAx72t4AwLo7iJ2WpVky+JAJiCjQ91gnQNkSy4pbkjVZ7/+pmCASK5bn4mfzccr92lnV4nqqzK6CKmdBz3Dhic60HhNODbSAMNnYAwd99eB4BgTZUZUMbrooNPed1655dAXWZmtY4re8kBZxc3kEI68tvgKgqSp8Ctzw2V9Z7u31AdHsrQOD5Q+ckAkKJpvWZE6BtjqSE9mJ4Dwj8JwiBcj29LgLhaH8A48A/h5QzSp6APSKojzrWFVCHJYpBdhGoAgJtmtvrx1sgYLwE5UM7Th11fDw35ouFKyCWMWvxSQrgsiOpc8v9IcK4P/ccyh/zLImAmAJNj80moDMzBxJNH5r3l0/A/BJ0BHiBpp+zCWj6gFp/ToDGkHW/OQXELswJiGXMWrwrwNpGY+dxBcQyZi3eFWBto7HzuAJiGbMW7wqwttHYeUoK+DibBcuQBJUIkAHW707AtG84t/8/AAAA//8vW7nWAAAABklEQVQDANbM559cZwnxAAAAAElFTkSuQmCC",
+      "subtype": "Sword",
+      "physicalDamageType": "Slashing",
+      "elementalDamageType": "Frost",
+      "twoHanded": false,
+      "locked": true
+    },
+    {
+      "id": "armor-1763507483080-3vnxutfgt",
+      "name": "Transcendent Chest of the Legend",
+      "type": "armor",
+      "level": 4,
+      "rarity": "Legendary",
+      "short": "Legendary chest armor piece with enhanced protection",
+      "slot": "chest",
+      "stats": {
+        "Focus": 14,
+        "Mana": 6,
+        "Endurance": 4
+      },
+      "value": 336,
+      "icon": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABl0lEQVR4AeyaTWoCQRCFC8lGyRGyyzaBQAIhEAI5QXKErHMADyG4deHawwkulXEjqL2TEix75lU7U/MG3qKpnvr56i17sJ8/7PusgfT8I4CeG0DOHDAc7ySy9MLPAOgL0c8EEH3D1nx0gEUoepwOiL5haz46wCIUPU4HRN+wnk+f6QBNpM55OLqXW6hOr/ofmANGRwglpQepe4YBSA1U1UZKKNVCCQogNTWdLcRTqQZScADI5krkcgPw8/0iSL0/PUoSGoobAHSjXvncACxXa0GqcwC8GkbndXMAulGvfATgRbYreemArmzKq8/wDrDAEYBFKHqcDoi+YWs+OsAiFD1OB0TfsDUfHWARih6HO+D/71eSXt+eJakpwJTjVE3z6f/hAHSBtp8JoO0b8u6PDvAmXDp/bj06IJdYtPt0QLSN5s4Dd4B+KvP59SFNpPPlDmjdhwIo9UTGGionDgNQ4mnMaY2cIS/dhQDYVhu5hS4Ndm0MAuDaYm28RwBt3ErJnugATXs7uZPI0vPSAZpI386dd0DThR0AAAD//6vG5A0AAAAGSURBVAMA20TVn6xbz2UAAAAASUVORK5CYII=",
+      "colors": {
+        "fill": "#32CD32",
+        "edge": "#228B22",
+        "legendary": true,
+        "gradient": {
+          "color1": "#32CD32",
+          "color2": "#00CED1"
+        }
+      },
+      "locked": true
+    },
+    {
+      "id": "weapon-1764047973293-59e2r1vt0",
+      "name": "Crackling Immortal Trident of the Ancients",
+      "type": "weapon",
+      "level": 3,
+      "rarity": "Legendary",
+      "short": "Legendary trident with enhanced properties",
+      "stats": {
+        "Strength": 8,
+        "Quickness": 8
+      },
+      "dmgMin": 23,
+      "dmgMax": 34,
+      "value": 420,
+      "icon": null,
+      "subtype": "Trident",
+      "physicalDamageType": "Piercing",
+      "elementalDamageType": "Lightning",
+      "twoHanded": true,
+      "locked": true
+    },
+    {
+      "id": "armor-1764008533540-52rrqfar8",
+      "name": "Eternal Shoulders of the Ancients",
+      "type": "armor",
+      "level": 6,
+      "rarity": "Legendary",
+      "short": "Legendary shoulders armor piece with enhanced protection",
+      "slot": "shoulders",
+      "stats": {
+        "Endurance": 17,
+        "Health": 8,
+        "Coordination": 4
+      },
+      "value": 672,
+      "icon": null,
+      "colors": {
+        "fill": "#FF6347",
+        "edge": "#8B0000",
+        "legendary": true,
+        "gradient": {
+          "color1": "#FF6347",
+          "color2": "#32CD32"
+        }
+      },
+      "locked": true
+    },
     null,
     null,
     null,
@@ -213,8 +341,8 @@
     null,
     null
   ],
-  "shirtColor": "#deb887",
-  "pantColor": "#008000",
+  "shirtColor": "#8b0000",
+  "pantColor": "#4b0082",
   "equipmentColors": {},
-  "lastSaved": 1762234668249
+  "lastSaved": 1764048558409
 }

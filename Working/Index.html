@@ -443,35 +443,6 @@ canvas{
     background: #456;
   }
   
-  /* Firefox scrollbar styling */
-  .panel.scrollable {
-    /* Temporarily disabled to fix rendering issue */
-    /* scrollbar-width: thin; */
-    /* scrollbar-color: #234 #061218; */
-  }
-  
-  /* Ensure panels maintain layout when scrollbars appear */
-  .panel.scrollable {
-    /* Temporarily disabled to fix rendering issue */
-    /* padding-right: 8px; */ /* Compensate for scrollbar width */
-  }
-  
-  /* Hide scrollbar when not needed but keep functionality */
-  .panel.scrollable:not(:hover)::-webkit-scrollbar-thumb {
-    /* Temporarily disabled to fix rendering issue */
-    /* background: transparent; */
-  }
-  
-  .panel.scrollable:hover::-webkit-scrollbar-thumb {
-    /* Temporarily disabled to fix rendering issue */
-    /* background: #234; */
-  }
-  
-  /* Ensure content doesn't get cut off by scrollbars */
-  .panel.scrollable > * {
-    /* Temporarily disabled to fix rendering issue */
-    /* max-width: calc(100% - 8px); */
-  }
   h2{margin:0 0 8px 0;font-size:14px}
   #log{
     height: 110px;
@@ -523,11 +494,50 @@ canvas{
   .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
   .stat{display:flex;justify-content:space-between;padding:6px;background:#05202a;border-radius:6px}
   #inventory{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-  .slot{width:var(--slot-size);height:var(--slot-size);border:1px solid #234;background:#061218;border-radius:6px;display:flex;align-items:center;justify-content:center;padding:var(--slot-pad);box-sizing:border-box}
+  /* Inventory panel - default height to fit all 12 slots (3 rows) + header */
+  #inventoryPanel {
+    height: calc(100vh - 200px);
+    min-height: 400px;
+    max-height: 600px;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  /* Responsive inventory panel height */
+  @media (max-height: 900px) {
+    #inventoryPanel {
+      height: calc(100vh - 150px);
+      min-height: 350px;
+      max-height: 500px;
+    }
+  }
+  @media (max-height: 700px) {
+    #inventoryPanel {
+      height: calc(100vh - 100px);
+      min-height: 300px;
+      max-height: 400px;
+    }
+  }
+  @media (max-height: 600px) {
+    #inventoryPanel {
+      height: calc(100vh - 80px);
+      min-height: 250px;
+      max-height: 350px;
+    }
+  }
+  .slot{width:var(--slot-size);height:var(--slot-size);border:1px solid #234;background:#061218;border-radius:6px;display:flex;align-items:center;justify-content:center;padding:var(--slot-pad);box-sizing:border-box;position:relative;transition:border-color 0.15s, box-shadow 0.15s}
+  .slot.locked{border-color:#c79a25;box-shadow:0 0 6px rgba(199,154,37,0.6) inset}
   .slot .itemIcon{width:var(--item-size);height:var(--item-size);object-fit:contain;display:block}
+  .item-lock-btn{position:absolute;top:3px;right:3px;width:18px;height:18px;border:1px solid rgba(255,255,255,0.35);background:rgba(5,10,18,0.9);color:#fff;border-radius:3px;font-size:10px;line-height:18px;text-align:center;cursor:pointer;opacity:0;pointer-events:none;transition:opacity 0.15s;display:flex;align-items:center;justify-content:center;padding:0;z-index:100}
+  .slot:hover .item-lock-btn,
+  .slot.locked .item-lock-btn{opacity:1;pointer-events:auto !important}
+  .slot.locked .item-lock-btn{pointer-events:auto !important}
+  .slot .itemIcon{position:relative;z-index:1;pointer-events:auto}
+  .slot .itemIcon:hover{pointer-events:auto}
+  .slot.locked .itemIcon{filter:saturate(0.85)}
   .paperdoll{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
   .pd-slot{width:var(--slot-size);height:var(--slot-size);border:1px solid #234;background:#061218;border-radius:6px;display:flex;align-items:center;justify-content:center;padding:var(--slot-pad);box-sizing:border-box}
   .pd-slot .itemIcon{width:var(--item-size);height:var(--item-size);object-fit:contain;display:block}
+  .locked-note{color:#f5c84c;font-weight:bold;margin-left:8px;font-size:12px;text-transform:uppercase}
   
   /* Responsive inventory grid */
   @media (max-width: 1000px) {
@@ -565,8 +575,17 @@ canvas{
   button{background:#0b2230;color:#bfe7ff;border:1px solid #1f5a72;padding:6px;border-radius:6px}
   input.keybind{width:120px}
   .icon{width:20px;height:20px;display:inline-block}
-  #shopPanel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:#051318;border:1px solid #234;padding:12px;border-radius:8px;display:none;z-index:1000;width:720px}
-  #shopPanel .row{display:flex;justify-content:space-between;padding:6px;border-bottom:1px solid #123}
+  #shopPanel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:#051318;border:1px solid #234;padding:12px;border-radius:8px;display:none;z-index:1000;width:760px;max-height:80vh;overflow-y:auto;overflow-x:hidden;flex-direction:column}
+  #shopPanel .row{display:flex;justify-content:space-between;padding:6px;border-bottom:1px solid #123;height:40px;min-height:40px;max-height:40px;align-items:center;box-sizing:border-box;overflow:hidden}
+  #shopPanel .row > div{display:flex;align-items:center;height:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #shopPanel .row > div:first-child{flex:1;min-width:0}
+  #shopPanel .row > div:last-child{flex-shrink:0}
+  #shopPanel .tabs{display:flex;gap:8px;margin-bottom:15px;border-bottom:1px solid #234}
+  #shopPanel .tab{background:#0b2230;color:#bfe7ff;border:1px solid #1f5a72;padding:8px 16px;border-radius:6px 6px 0 0;cursor:pointer;border-bottom:none}
+  #shopPanel .tab:hover{background:#0d2a3a}
+  #shopPanel .tab.active{background:#051318;color:#e6f7ff;border-bottom:1px solid #051318;margin-bottom:-1px}
+  #shopPanel .tab-content{display:none;height:620px;overflow-y:auto;overflow-x:hidden}
+  #shopPanel .tab-content.active{display:block}
   #shopPanel .sell-all-button{background:#dc3545;color:white;border:1px solid #c82333;padding:8px 16px;border-radius:4px;cursor:pointer;font-weight:bold;transition:background-color 0.2s}
   #shopPanel .sell-all-button:hover{background:#c82333}
   #keybinds{display:flex;gap:6px;flex-wrap:wrap}
@@ -638,7 +657,7 @@ canvas{
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel" id="inventoryPanel">
       <h2>Inventory</h2>
       <div style="display:flex;gap:12px;align-items:flex-start">
         <div style="flex:1">

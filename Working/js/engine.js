@@ -195,12 +195,9 @@ function initializeEngine() {
         window.player.calculateReach();
     }
     
-    console.log('Player initialized:', window.player);
-    console.log('Player properties:', {x: window.player.x, y: window.player.y, w: window.player.w, h: window.player.h});
     
     // Local enemies are only used when offline; when connected, we render server enemies from window.remoteEnemies
     window.enemies=[];
-    console.log('Initialized local enemies array:', window.enemies);
 
     // Initialize projectiles array for network-synchronized projectiles
     window.projectiles = [];
@@ -210,26 +207,20 @@ function initializeEngine() {
     // Initialize WebSocket functions if not already set
     if (!window.wsSend) {
         window.wsSend = function(data) {
-            console.log('wsSend called (no-op):', data);
             // No-op when not connected
         };
-        console.log('Initialized window.wsSend function');
     }
 
     if (!window.wsDisconnect) {
         window.wsDisconnect = function() {
-            console.log('wsDisconnect called (no-op)');
             // No-op when not connected
         };
-        console.log('Initialized window.wsDisconnect function');
     }
 
     if (!window.wsConnect) {
         window.wsConnect = function(url) {
-            console.log('wsConnect called (no-op):', url);
             // No-op when not connected
         };
-        console.log('Initialized window.wsConnect function');
     }
 
     // Initialize drawing functions if not already set
@@ -256,64 +247,51 @@ function initializeEngine() {
 
     // Initialize sprite sheet variables if not already set
     if (!window.SHEET_READY) {
-        console.log('Setting SHEET_READY to false');
         window.SHEET_READY = false;
     }
     if (!window.baseSheetImg) {
-        console.log('Setting baseSheetImg to null');
         window.baseSheetImg = null;
     }
     if (!window.FW) {
-        console.log('Setting FW to 48');
         window.FW = 48;
     }
     if (!window.FH) {
-        console.log('Setting FH to 64');
         window.FH = 64;
     }
 
     // Initialize view dimensions if not already set
     if (!window.VIEW_W) {
-        console.log('Setting VIEW_W to 800');
         window.VIEW_W = 800;
     }
     if (!window.VIEW_H) {
-        console.log('Setting VIEW_H to 600');
         window.VIEW_H = 600;
     }
 
     // Initialize world dimensions if not already set
     if (!window.WORLD_W) {
-        console.log('Setting WORLD_W to 3600');
         window.WORLD_W = 3600;
     }
 
     if (!window.GROUND_Y) {
-        console.log('Setting GROUND_Y to 550');
         window.GROUND_Y = 550;
     }
 
     // Ensure worldDrops is initialized globally
     if (!window.worldDrops) {
         window.worldDrops = [];
-        console.log('Initialized window.worldDrops:', window.worldDrops);
     } else {
-        console.log('Using existing worldDrops:', window.worldDrops.length, 'items');
     }
 
     // Platform system removed - using floor tiles from level JSON instead
 
     // Initialize camera position
     if (!window.cameraX) {
-        console.log('Setting cameraX to 0');
         window.cameraX = 0;
     } else {
-        console.log('Using existing cameraX:', window.cameraX);
     }
 
     // Initialize basic gameState for offline mode if not connected to server
     if (!window.gameState) {
-        console.log('Initializing offline gameState with sample level data');
         
         // Sample level data (from sample_level.json)
         const sampleLevelData = {
@@ -352,11 +330,6 @@ function initializeEngine() {
         window.spawners = window.gameState.spawners;
         window.portals = window.gameState.portals;
         
-        console.log('Offline gameState initialized with sample level data:');
-        console.log('- Floors:', window.gameState.floors.length);
-        console.log('- Vendor:', window.gameState.vendor ? 'Yes' : 'No');
-        console.log('- Spawners:', window.gameState.spawners.length);
-        console.log('- Portals:', window.gameState.portals.length);
     }
 
     // Connection screen management
@@ -532,8 +505,6 @@ function initializeEngine() {
             // CRITICAL: Do NOT initialize inventory/equipment UI slots yet
             // Wait until after player logs in and we receive playerData
             // This ensures we know which player's inventory to load
-            console.log('DOMContentLoaded - Skipping inventory/equipment initialization until after login');
-            console.log('Inventory and equipment will be initialized when playerData is received after login');
             
             // DO NOT call initInventoryUI or initPaperDollUI here
             // DO NOT call refreshInventoryUI here - wait until after player connects and receives playerData
@@ -584,7 +555,6 @@ function initializeEngine() {
             currentCanvas.addEventListener('mouseleave', window.hideTooltip);
         }
         
-        console.log('Canvas event listeners set up successfully');
     }
 
     // Initialize canvas event listeners when ready
@@ -629,11 +599,9 @@ function initializeEngine() {
                 window.wsSend({ type:'spawnEnemy', x, level: lvl });
             } else {
                 if (window.Enemy) {
-                    console.log('Using existing Enemy class');
                     const e=new window.Enemy(randInt(300,Math.min(WORLD_W-150,850)),0,randInt(1,5)); 
                     window.enemies.push(e);
                 } else {
-                    console.log('Enemy class not found, cannot spawn local enemies');
                 }
             }
         });
@@ -654,7 +622,6 @@ function initializeEngine() {
                 console.warn('refreshInventoryUI function not available yet');
             }
         } else {
-            console.log('Skipping refreshInventoryUI for clearDrops - connected to server with inventory data');
         }
         });
     }
@@ -730,15 +697,14 @@ function initializeEngine() {
             if (window.player.portalCooldown) {
                 window.player.portalCooldown = Math.max(0, window.player.portalCooldown - dt * 1000);
             }
-        } 
-        // When online, enemy AI is server-authoritative; do not run local AI
-        // Only update local enemies when offline
-        if (!window.isConnected || !window.isConnected()) {
-            for(const e of window.enemies) {
+        }
+        // When online, enemy AI is server-authoritative; do not run local AI.
+        // Only update locally simulated enemies when offline and they expose an update function.
+        const offlineMode = (!window.isConnected || !window.isConnected());
+        if (offlineMode && Array.isArray(window.enemies)) {
+            for (const e of window.enemies) {
                 if (e && typeof e.update === 'function') {
                     e.update(dt);
-                } else if (e && typeof e.update === 'undefined') {
-                    console.warn('Enemy missing update method:', e);
                 }
             }
         }
@@ -842,13 +808,11 @@ function initializeEngine() {
             const dist = Math.hypot(dx, dy);
             
             if (dist < d.pickRadius) {
-                console.log('Picking up:', d.item.name, 'at distance:', dist);
                 
                 if (d.item.type === 'currency') {
                     const amt = d.item.amount || d.item.value || 0;
                     window.player.pyreals += amt;
                     window.worldDrops.splice(i, 1);
-                    console.log('Picked up ' + amt + ' Pyreals');
                     
                     // Notify server about currency pickup so it can persist the change
                     if (window.isConnected && window.isConnected()) {
@@ -888,7 +852,6 @@ function initializeEngine() {
                         }
                     }
                 } else {
-                    console.log('No space in bag for item:', d.item.name);
                 }
                 }
             }
@@ -966,6 +929,20 @@ function initializeEngine() {
         ctx.fillStyle = '#0f0';
         ctx.fillRect(X, Y - 10, hpw, 4);
         
+        // Draw mana bar for other players (below health bar)
+        if (otherPlayer.maxMana && otherPlayer.maxMana > 0) {
+            const currentMana = otherPlayer.mana !== undefined ? otherPlayer.mana : otherPlayer.maxMana;
+            const manaBarWidth = clamp(W * (currentMana / otherPlayer.maxMana), 0, W);
+            ctx.fillStyle = '#00f';
+            ctx.fillRect(X, Y - 6, manaBarWidth, 3);
+            // Draw background for mana bar
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            ctx.fillRect(X, Y - 6, W, 3);
+            // Draw mana fill again on top
+            ctx.fillStyle = '#00f';
+            ctx.fillRect(X, Y - 6, manaBarWidth, 3);
+        }
+        
         // Show death indicator for other players
         if (otherPlayer.isDead) {
             ctx.save();
@@ -1009,55 +986,107 @@ function initializeEngine() {
         } 
         if (window.equip) {
             // Use drawAllEquipment for consistent z-order and no flickering
-            window.drawAllEquipment(ctx,X,Y,window.equip,true,flip);
+            // Pass swing angle so offhand weapon also swings
+            const ang = (opts.swingAngle||0);
+            window.drawAllEquipment(ctx,X,Y,window.equip,true,flip,ang);
             // Draw mainhand weapon with swing angle if needed (drawn last so it appears on top)
             if (window.equip.mainhand) {
-                const ang = (opts.swingAngle||0); 
                 window.drawWeapon(ctx,X,Y,flip,window.equip.mainhand,ang,window.equip,'mainhand');
-                
-                // Draw attack range indicator when attacking
-                if (opts.swingAngle !== undefined && opts.swingAngle !== 0) {
-                    drawAttackRangeIndicator(ctx, X, Y, W, H, flip, window.player._reach || 60);
-                }
             }
         } 
         ctx.restore(); 
     }
     
     // Draw attack range indicator to show how far the player can hit
-    function drawAttackRangeIndicator(ctx, x, y, w, h, flip, reach) {
+    function drawAttackRangeIndicator(ctx, x, y, w, h, flip, reach, swingAngle = 0) {
         ctx.save();
         
-        // Calculate the center of the character
-        const centerX = x + w / 2;
-        const centerY = y + h / 2;
+        // Position indicator relative to where the weapon actually is
+        // Note: When flip=true, the coordinate system is already flipped by drawCharacter
+        // drawCharacter does: translate(X+W, Y), scale(-1, 1), then X=0, Y=0
+        // In flipped coords: x=0 is right edge in world (player's right), x=W is left edge in world
+        // In normal coords: x is left edge, x+W is right edge
+        // Weapon positioning in drawWeapon matches exactly:
+        //   - When flip=true: px = W + 15 (in flipped coords, this is player's left edge + offset)
+        //   - When flip=false: px = x + W - 5 (in normal coords, this is player's right edge - offset)
+        // After drawCharacter transform: when flip=true, x=0, so weapon is at W+15 in flipped coords
+        // When flip=false, x is unchanged, so weapon is at W-5 in normal coords (since x=0 after transform)
+        // Match drawWeapon's px and py calculation exactly
+        // When flip=true: px = W + 15 (in flipped coords)
+        // When flip=false: px = x + W - 5 (in normal coords, x is original value)
+        const weaponHandleX = flip ? (w + 15) : (x + w - 5); // Weapon handle position in current coordinate system (matches drawWeapon's px)
+        const baseVerticalPos = y + 43; // Base vertical position for mainhand (matches drawWeapon)
+        const mainhandVerticalPos = baseVerticalPos - 16; // Mainhand moved 16 pixels higher (matches drawWeapon)
+        const weaponY = mainhandVerticalPos; // Same vertical position as mainhand weapon (matches drawWeapon's py)
+        
+        // Translate to weapon handle position (same as drawWeapon does with ctx.translate(px, py))
+        // This puts us in the weapon's local coordinate system where the handle is at (0, 0)
+        ctx.translate(weaponHandleX, weaponY);
+        
+        // Get actual weapon image width - try to get from equipped weapon
+        let weaponImageWidth = 70; // Default fallback
+        if (window.equip && window.equip.mainhand && window.equip.mainhand.name) {
+            const weapon = window.equip.mainhand;
+            const kind = (window.weaponKindFromName && window.weaponKindFromName(weapon.name)) || weapon.subtype || 'Sword';
+            
+            // Try to get the actual image width from the loaded weapon image
+            if (window.loadWeaponImage) {
+                const weaponImg = window.loadWeaponImage(kind, weapon);
+                if (weaponImg && weaponImg.complete && weaponImg.naturalWidth > 0) {
+                    weaponImageWidth = weaponImg.naturalWidth;
+                } else {
+                    // Image not loaded yet, use reach as fallback
+                    weaponImageWidth = reach;
+                }
+            } else {
+                // loadWeaponImage not available, use reach as fallback
+                weaponImageWidth = reach;
+            }
+        }
+        
+        // Apply the same rotation as the weapon (swing angle)
+        ctx.rotate(swingAngle);
+        
+        // Weapon tip position in weapon's local coordinate system (after rotation is applied)
+        // When facing right: tip is at +weaponImageWidth from handle (0)
+        // When facing left: tip is at -weaponImageWidth from handle (0) - visually extends left
+        const localTipX = flip ? -weaponImageWidth : weaponImageWidth;
+        const localTipY = 0;
+        
+        // The weapon tip is now at (localTipX, localTipY) in the rotated coordinate system
+        // Since we've already translated and rotated, we can use these coordinates directly
+        const weaponTipX = localTipX;
+        const weaponTipY = localTipY;
         
         // Convert reach from game units to pixels (reach of 70 = ~100 pixels)
         const reachPixels = (reach / 70) * 100;
         
         // Draw a semi-transparent arc showing the attack range
+        // Arc should be centered at the weapon tip where attacks originate
+        // We're now in the weapon's local coordinate system (translated and rotated)
         ctx.globalAlpha = 0.3;
         ctx.strokeStyle = '#ff4444';
         ctx.lineWidth = 2;
         
         // Draw the range indicator as a semi-circle in the direction the player is facing
+        // Center the arc at the weapon tip position (localTipX, localTipY)
         ctx.beginPath();
         if (flip) {
-            // Facing left - draw arc on the left side
-            ctx.arc(centerX, centerY, reachPixels, Math.PI/2, -Math.PI/2, true);
+            // Facing left - draw arc on the left side, centered at weapon tip
+            ctx.arc(weaponTipX, weaponTipY, reachPixels, Math.PI/2, -Math.PI/2, true);
         } else {
-            // Facing right - draw arc on the right side
-            ctx.arc(centerX, centerY, reachPixels, -Math.PI/2, Math.PI/2, false);
+            // Facing right - draw arc on the right side, centered at weapon tip
+            ctx.arc(weaponTipX, weaponTipY, reachPixels, -Math.PI/2, Math.PI/2, false);
         }
         ctx.stroke();
         
-        // Draw a small dot at the maximum reach distance
+        // Draw a small dot at the maximum reach distance from the weapon tip
         ctx.globalAlpha = 0.8;
         ctx.fillStyle = '#ff4444';
         if (flip) {
-            ctx.fillRect(centerX - reachPixels - 2, centerY - 2, 4, 4);
+            ctx.fillRect(weaponTipX - reachPixels - 2, weaponTipY - 2, 4, 4);
         } else {
-            ctx.fillRect(centerX + reachPixels - 2, centerY - 2, 4, 4);
+            ctx.fillRect(weaponTipX + reachPixels - 2, weaponTipY - 2, 4, 4);
         }
         
         ctx.restore();
@@ -1103,7 +1132,6 @@ function initializeEngine() {
         
         // Debug: Log camera position
         if (window.debugCamera) {
-            console.log('Camera X:', cameraX, 'Player X:', window.player?.x);
         }
         
         // Draw floors from level data (AFTER camera transform - floors move with world)
@@ -1129,11 +1157,9 @@ function initializeEngine() {
                     currentCtx.lineWidth = 1;
                     currentCtx.strokeRect(floor.x, floor.y, floor.width, floor.height);
                 } else {
-                    console.log('Skipped floor:', floor);
                 }
             }
         } else {
-            console.log('No floors to render. gameState:', !!window.gameState, 'floors:', window.gameState?.floors);
             
             // Fallback: Draw a basic ground floor if no gameState floors are available
             currentCtx.fillStyle = '#228B22'; // Grass green
@@ -1141,7 +1167,6 @@ function initializeEngine() {
             currentCtx.strokeStyle = 'rgba(0,0,0,0.2)';
             currentCtx.lineWidth = 1;
             currentCtx.strokeRect(0, 486, WORLD_W, 64);
-            console.log('Drew fallback ground floor at y=486');
         }
         
         // Debug: Draw a test floor to verify rendering is working (temporarily disabled)
@@ -1271,6 +1296,17 @@ function initializeEngine() {
         // Render enemies: when connected, draw remote enemies; otherwise draw local ones
         if (typeof window.isConnected === 'function' && window.isConnected() && window.remoteEnemies && window.remoteEnemies instanceof Map) {
             for (const enemy of window.remoteEnemies.values()) {
+                // Skip dead enemies UNLESS they're still playing death animation (wisp)
+                // This ensures the death animation is visible before the enemy is removed
+                if ((enemy.dead || enemy.isDead || (enemy.health !== undefined && enemy.health <= 0)) && 
+                    !((enemy.type === 'waterwisp' || enemy.type === 'firewisp' || enemy.type === 'earthwisp' || enemy.type === 'windwisp') && enemy.dieAnimProgress !== undefined && enemy.dieAnimProgress < 1.1)) {
+                    continue;
+                }
+                // Update attack animation timer on client for smoother animation
+                if (enemy.attackAnimTime !== undefined && enemy.attackAnimTime > 0) {
+                    enemy.attackAnimTime = Math.max(0, enemy.attackAnimTime - dt);
+                }
+                
                 const moving = Math.abs(enemy.vx||0)>5; 
                 const air = false; 
                 
@@ -1284,21 +1320,116 @@ function initializeEngine() {
                     enemy.damageFlashTimer -= dt;
                 }
                 
-                // Draw enemy with damage flash effect
+                // Draw enemy with damage flash effect (skip for Wisp - it uses hurt sprites)
                 currentCtx.save();
-                if (enemy.damageFlashTimer > 0) {
-                    // Flash red when taking damage
+                if (enemy.damageFlashTimer > 0 && enemy.type !== 'waterwisp' && enemy.type !== 'firewisp' && enemy.type !== 'earthwisp' && enemy.type !== 'windwisp') {
+                    // Flash red when taking damage (not for Wisp)
                     currentCtx.globalCompositeOperation = 'multiply';
                     currentCtx.fillStyle = 'rgba(255, 0, 0, 0.3)';
                     currentCtx.fillRect(enemy.x||0, enemy.y||0, 48, 64);
                 }
                 
-                // Draw enemy as NPC with server-provided colors for consistent appearance
-                if (window.drawNPCBody && enemy.colors) {
+                // Check if this is a Wisp enemy (sprite-based)
+                if (enemy.type === 'waterwisp' && window.drawWaterWisp) {
+                    window.drawWaterWisp(currentCtx, enemy, dt);
+                } else if (enemy.type === 'firewisp' && window.drawFireWisp) {
+                    window.drawFireWisp(currentCtx, enemy, dt);
+                } else if (enemy.type === 'earthwisp' && window.drawEarthWisp) {
+                    window.drawEarthWisp(currentCtx, enemy, dt);
+                } else if (enemy.type === 'windwisp' && window.drawWindWisp) {
+                    window.drawWindWisp(currentCtx, enemy, dt);
+                }
+                // Draw enemy as NPC with server-provided colors and equipment
+                else if (window.drawNPCBody && enemy.colors) {
                     window.drawNPCBody(currentCtx, enemy.x||0, enemy.y||0, enemy.colors, 0, moving);
+                    // Draw enemy equipment if available
+                    if (enemy.equip) {
+                        // Use facing direction if available, otherwise fall back to vx
+                        const flip = enemy.facing === 'left' || (enemy.facing === undefined && (enemy.vx||0) < 0);
+                        
+                        // Calculate swing angle from attack animation (same as player)
+                        let enemySwingAngle = 0;
+                        if (enemy.attackAnimTime && enemy.attackAnimTime > 0) {
+                            const progress = 1 - (enemy.attackAnimTime / 0.25);
+                            if (typeof window.swingAngle === 'function') {
+                                enemySwingAngle = window.swingAngle(progress);
+                            }
+                        }
+                        
+                        const enemyX = enemy.x || 0;
+                        const enemyY = enemy.y || 0;
+                        const W = 48; // Character width
+                        
+                        // Draw armor without transformation (drawNPCBody doesn't flip, so armor shouldn't either)
+                        if (window.drawAllEquipment) {
+                            // Draw armor parts only (not weapons) - we'll draw weapons separately with transformation
+                            if (enemy.equip.chest && window.drawChest) window.drawChest(currentCtx, enemyX, enemyY, enemy.equip.chest);
+                            if (enemy.equip.legs && window.drawLegs) window.drawLegs(currentCtx, enemyX, enemyY, enemy.equip.legs);
+                            if (enemy.equip.waist && window.drawWaist) window.drawWaist(currentCtx, enemyX, enemyY, enemy.equip.waist);
+                            if (enemy.equip.feet && window.drawBoots) window.drawBoots(currentCtx, enemyX, enemyY, enemy.equip.feet);
+                            if (enemy.equip.shoulders && window.drawShoulders) window.drawShoulders(currentCtx, enemyX, enemyY, enemy.equip.shoulders);
+                            if (enemy.equip.wrists && window.drawWrists) window.drawWrists(currentCtx, enemyX, enemyY, enemy.equip.wrists);
+                            if (enemy.equip.hands && window.drawGloves) window.drawGloves(currentCtx, enemyX, enemyY, enemy.equip.hands);
+                            if (enemy.equip.neck && window.drawNeck) window.drawNeck(currentCtx, enemyX, enemyY, enemy.equip.neck);
+                            if (enemy.equip.head && window.drawHelmet) window.drawHelmet(currentCtx, enemyX, enemyY, enemy.equip.head);
+                        }
+                        
+                        // Draw weapons with coordinate transformation when facing left (same as drawCharacter does)
+                        // drawWeapon expects the coordinate system to be flipped when flip=true
+                        if (window.drawWeapon) {
+                            if (flip) {
+                                // Save context and apply the same transformation as drawCharacter
+                                currentCtx.save();
+                                currentCtx.translate(enemyX + W, enemyY);
+                                currentCtx.scale(-1, 1);
+                                // Now draw at (0, 0) in the flipped coordinate system
+                                
+                                // Draw offhand weapon first (if exists and not two-handed)
+                                if (enemy.equip.offhand && enemy.equip.mainhand) {
+                                    const isSameWeapon = enemy.equip.offhand === enemy.equip.mainhand || 
+                                        (enemy.equip.offhand.id && enemy.equip.mainhand.id && enemy.equip.offhand.id === enemy.equip.mainhand.id);
+                                    const isMainhandTwoHanded = enemy.equip.mainhand.twoHanded || 
+                                        (enemy.equip.mainhand.subtype && typeof window.checkIfTwoHanded === 'function' && window.checkIfTwoHanded(enemy.equip.mainhand.subtype));
+                                    if (!isSameWeapon && !isMainhandTwoHanded) {
+                                        window.drawWeapon(currentCtx, 0, 0, flip, enemy.equip.offhand, enemySwingAngle, enemy.equip, 'offhand');
+                                    }
+                                } else if (enemy.equip.offhand) {
+                                    window.drawWeapon(currentCtx, 0, 0, flip, enemy.equip.offhand, enemySwingAngle, enemy.equip, 'offhand');
+                                }
+                                
+                                // Draw mainhand weapon
+                                if (enemy.equip.mainhand) {
+                                    window.drawWeapon(currentCtx, 0, 0, flip, enemy.equip.mainhand, enemySwingAngle, enemy.equip, 'mainhand');
+                                }
+                                
+                                currentCtx.restore();
+                            } else {
+                                // Facing right: no transformation needed
+                                
+                                // Draw offhand weapon first (if exists and not two-handed)
+                                if (enemy.equip.offhand && enemy.equip.mainhand) {
+                                    const isSameWeapon = enemy.equip.offhand === enemy.equip.mainhand || 
+                                        (enemy.equip.offhand.id && enemy.equip.mainhand.id && enemy.equip.offhand.id === enemy.equip.mainhand.id);
+                                    const isMainhandTwoHanded = enemy.equip.mainhand.twoHanded || 
+                                        (enemy.equip.mainhand.subtype && typeof window.checkIfTwoHanded === 'function' && window.checkIfTwoHanded(enemy.equip.mainhand.subtype));
+                                    if (!isSameWeapon && !isMainhandTwoHanded) {
+                                        window.drawWeapon(currentCtx, enemyX, enemyY, flip, enemy.equip.offhand, enemySwingAngle, enemy.equip, 'offhand');
+                                    }
+                                } else if (enemy.equip.offhand) {
+                                    window.drawWeapon(currentCtx, enemyX, enemyY, flip, enemy.equip.offhand, enemySwingAngle, enemy.equip, 'offhand');
+                                }
+                                
+                                // Draw mainhand weapon
+                                if (enemy.equip.mainhand) {
+                                    window.drawWeapon(currentCtx, enemyX, enemyY, flip, enemy.equip.mainhand, enemySwingAngle, enemy.equip, 'mainhand');
+                                }
+                            }
+                        }
+                    }
                 } else {
                     // Fallback to basic character drawing if no colors from server
-                    drawCharacter(currentCtx,{timer:0,index:0},enemy.x||0,enemy.y||0,48,64,dt,(enemy.vx||0)<0,moving,air,{}); 
+                    const flip = enemy.facing === 'left' || (enemy.facing === undefined && (enemy.vx||0) < 0);
+                    drawCharacter(currentCtx,{timer:0,index:0},enemy.x||0,enemy.y||0,48,64,dt,flip,moving,air,{}); 
                 }
                 
                 // Add spellcaster visual effects
@@ -1400,17 +1531,21 @@ function initializeEngine() {
                     e.damageFlashTimer -= dt;
                 }
                 
-                // Draw enemy with damage flash effect
+                // Draw enemy with damage flash effect (skip for Water Wisp - it uses hurt sprites)
                 currentCtx.save();
-                if (e.damageFlashTimer > 0) {
-                    // Flash red when taking damage
+                if (e.damageFlashTimer > 0 && e.type !== 'waterwisp') {
+                    // Flash red when taking damage (not for Water Wisp)
                     currentCtx.globalCompositeOperation = 'multiply';
                     currentCtx.fillStyle = 'rgba(255, 0, 0, 0.3)';
                     currentCtx.fillRect(e.x, e.y, e.w, e.h);
                 }
                 
+                // Check if this is a Water Wisp enemy (sprite-based)
+                if (e.type === 'waterwisp' && window.drawWaterWisp) {
+                    window.drawWaterWisp(currentCtx, e, dt);
+                }
                 // Draw enemy as NPC with consistent colors
-                if (window.drawNPCBody && e.colors) {
+                else if (window.drawNPCBody && e.colors) {
                     window.drawNPCBody(currentCtx, e.x, e.y, e.colors, e.anim ? e.anim.index : 0, moving);
                 } else {
                     // Fallback to basic character drawing
@@ -1565,7 +1700,6 @@ function initializeEngine() {
                     currentCtx.globalAlpha = 1.0;
                 } else {
                     // Fallback for unknown projectile types - draw a simple circle
-                    console.log('Unknown projectile type:', projectile.type, 'drawing fallback');
                     currentCtx.fillStyle = '#FF0000'; // Red fallback
                     currentCtx.beginPath();
                     currentCtx.arc(projectile.x, projectile.y, 6, 0, Math.PI * 2);
@@ -1678,6 +1812,20 @@ function initializeEngine() {
             currentCtx.fillText(window.player.id, window.player.x, window.player.y-10); 
             currentCtx.fillStyle='#0f0'; 
             currentCtx.fillRect(window.player.x, window.player.y-10, clamp(48*(window.player.health/window.player.maxHealth),0,48),4);
+            
+            // Draw mana bar (blue) below health bar
+            if (window.player.maxMana && window.player.maxMana > 0) {
+                const currentMana = window.player.mana !== undefined ? window.player.mana : window.player.maxMana;
+                const manaBarWidth = clamp(48 * (currentMana / window.player.maxMana), 0, 48);
+                currentCtx.fillStyle = window.player._insufficientManaFlash ? '#ff0088' : '#00f'; // Flash magenta if insufficient mana
+                currentCtx.fillRect(window.player.x, window.player.y - 6, manaBarWidth, 3);
+                // Draw background for mana bar
+                currentCtx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+                currentCtx.fillRect(window.player.x, window.player.y - 6, 48, 3);
+                // Draw mana fill again on top
+                currentCtx.fillStyle = window.player._insufficientManaFlash ? '#ff0088' : '#00f';
+                currentCtx.fillRect(window.player.x, window.player.y - 6, manaBarWidth, 3);
+            }
         } 
         
         // Show death indicator and respawn countdown
@@ -1757,8 +1905,14 @@ function initializeEngine() {
             if (typeof window.last === 'undefined') {
                 window.last = now;
             }
+            // Cap delta time to prevent large jumps (60fps = 16.67ms, allow up to 33ms for frame drops)
             const dt = Math.min(0.033, (now - window.last) / 1000); 
-            window.last = now; 
+            window.last = now;
+            
+            // Process any pending network messages (non-blocking)
+            if (typeof window._processMessageQueue === 'function') {
+                window._processMessageQueue();
+            } 
             
             advance(dt); 
             
@@ -1780,10 +1934,6 @@ function initializeEngine() {
                 
                 // Debug: Log camera and player positions to verify centering
                 if (window.debugCamera) {
-                    console.log('Player x:', window.player.x, 'Player w:', window.player.w, 'VIEW_W:', VIEW_W, 'Camera X:', window.cameraX, 'Target:', targetCameraX);
-                    console.log('Player center should be at:', window.player.x + window.player.w/2);
-                    console.log('Screen center is at:', VIEW_W/2);
-                    console.log('Camera should center player at screen position:', window.player.x + window.player.w/2 - window.cameraX);
                 }
             } 
             
@@ -1794,7 +1944,6 @@ function initializeEngine() {
             }
             if(!window.bootLogged){ 
                 window.bootLogged=true; 
-                console.log('Engine started.'); 
                 
                 if (!window.connectionStatus || !window.connectionStatus.initialConnectionComplete) {
                     if (typeof window.refreshInventoryUI === 'function' && window.player) {
@@ -1805,7 +1954,6 @@ function initializeEngine() {
                         console.warn('refreshInventoryUI function not available yet');
                     }
                 } else {
-                    console.log('Skipping refreshInventoryUI for engine startup - connected to server with inventory data');
                 }
                 
                 if (typeof window.updatePlayerStatsUI === 'function' && window.player) {
@@ -1849,12 +1997,10 @@ function initializeEngine() {
             typeof window.advanceAnim !== 'function' || 
             !window.binds || 
             !gameCanvas) {
-            console.log('Waiting for required functions to be available...');
             setTimeout(startGameWhenReady, 100);
             return;
         }
         
-        console.log('All required functions available, starting game loop');
         
         // Start the game loop
         requestAnimationFrame(loop);

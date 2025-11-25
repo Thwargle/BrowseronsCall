@@ -4,6 +4,23 @@ const https = require('https');
 const path = require('path');
 const fs = require('fs');
 
+// Global error handlers to catch and log crashes
+process.on('uncaughtException', (error) => {
+    console.error('=== UNCAUGHT EXCEPTION - SERVER CRASH ===');
+    console.error('Error:', error);
+    console.error('Stack:', error.stack);
+    console.error('=========================================');
+    // Keep server running for debugging, but log the error
+    // In production, you might want to exit here
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('=== UNHANDLED REJECTION ===');
+    console.error('Reason:', reason);
+    console.error('Promise:', promise);
+    console.error('===========================');
+});
+
 // Import modular systems
 const { 
     generateDeathMessage, 
@@ -15,12 +32,16 @@ const {
 const { 
     getRandomEnemyName, 
     generateNPCColors, 
-    createEnemy 
+    createEnemy,
+    generateEnemyEquipment,
+    calculateEnemySpeed,
+    calculateEnemyDamage 
 } = require('./enemy');
 const { 
     generateLoot, 
     createTestSword,
-    checkIfTwoHanded
+    checkIfTwoHanded,
+    determinePhysicalDamageType
 } = require('./loot');
 const LevelLoader = require('./level-loader');
 
@@ -85,7 +106,9 @@ const httpServer = http.createServer((req, res) => {
         res.end(JSON.stringify(levelData));
     } else if (req.url.startsWith('/assets/')) {
         // Serve static assets (weapons, wands, etc.)
-        const filePath = path.join(__dirname, '..', req.url);
+        // Decode URL-encoded paths (e.g., %20 for spaces)
+        const decodedUrl = decodeURIComponent(req.url);
+        const filePath = path.join(__dirname, '..', decodedUrl);
         fs.readFile(filePath, (err, data) => {
             if (err) {
                 res.writeHead(404);
@@ -121,7 +144,6 @@ try {
         key = fs.readFileSync(keyPath);
         cert = fs.readFileSync(certPath);
     } else {
-        console.log('PEM certificates not found, generating self-signed certs at runtime...');
         const selfsigned = require('selfsigned');
         const attrs = [{ name: 'commonName', value: 'localhost' }];
         const pems = selfsigned.generate(attrs, { days: 365, keySize: 2048, algorithm: 'sha256' });
@@ -179,7 +201,9 @@ try {
             res.end(JSON.stringify(levelData));
         } else if (req.url.startsWith('/assets/')) {
             // Serve static assets (weapons, wands, etc.)
-            const filePath = path.join(__dirname, '..', req.url);
+            // Decode URL-encoded paths (e.g., %20 for spaces)
+            const decodedUrl = decodeURIComponent(req.url);
+            const filePath = path.join(__dirname, '..', decodedUrl);
             fs.readFile(filePath, (err, data) => {
                 if (err) {
                     res.writeHead(404);
@@ -204,8 +228,6 @@ try {
     
     httpsWss = new WebSocket.Server({ server: httpsServer });
 } catch (error) {
-    console.log('HTTPS server not available (certificate error):', error.message);
-    console.log('Only HTTP server will run');
 }
 
 // Create WebSocket servers
@@ -237,6 +259,119 @@ if (httpsWss) {
 // Game state
 const WORLD_W = 3600;
 const GROUND_Y = 550;
+const DROP_PICKUP_DELAY_MS = 800;
+
+function inferWeaponSubtype(name = '') {
+    const lower = name.toLowerCase();
+    const pairs = [
+        ['warhammer', 'Warhammer'],
+        ['battleaxe', 'Battleaxe'],
+        ['crossbow', 'Crossbow'],
+        ['longsword', 'Longsword'],
+        ['greatsword', 'Greatsword'],
+        ['scimitar', 'Scimitar'],
+        ['halberd', 'Halberd'],
+        ['blade', 'Blade'],
+        ['sword', 'Sword'],
+        ['dagger', 'Dagger'],
+        ['axe', 'Axe'],
+        ['saber', 'Saber'],
+        ['mace', 'Mace'],
+        ['spear', 'Spear'],
+        ['hammer', 'Hammer'],
+        ['bow', 'Bow'],
+        ['staff', 'Staff'],
+        ['wand', 'Wand'],
+        ['katana', 'Katana'],
+        ['rapier', 'Rapier'],
+        ['club', 'Club'],
+        ['maul', 'Maul'],
+        ['flail', 'Flail'],
+        ['javelin', 'Javelin'],
+        ['trident', 'Trident'],
+        ['pike', 'Pike']
+    ];
+    for (const [needle, subtype] of pairs) {
+        if (lower.includes(needle)) return subtype;
+    }
+    return null;
+}
+
+function cloneItem(item) {
+    return item ? JSON.parse(JSON.stringify(item)) : item;
+}
+
+function computeItemValue(item) {
+    if (!item) return 5;
+    const level = item.level || 1;
+    const base = item.type === 'armor' ? 16 : 20;
+    const rarity = item.rarity || 'Common';
+    const multiplier = rarity === 'Legendary' ? 7 :
+        rarity === 'Epic' ? 3.5 :
+        rarity === 'Rare' ? 2.5 :
+        rarity === 'Uncommon' ? 1.8 : 1;
+    return Math.max(5, Math.round(level * base * multiplier));
+}
+
+function normalizeDropItem(item) {
+    if (!item) return item;
+    const normalized = cloneItem(item);
+    // Explicitly preserve locked property - always preserve it if it exists (including false)
+    if ('locked' in item) {
+        normalized.locked = item.locked === true || item.locked === 'true';
+    }
+    // Explicitly preserve weaponSprite and weaponSpriteType - these must be consistent across all rendering
+    if (item.weaponSprite) {
+        normalized.weaponSprite = item.weaponSprite;
+    }
+    if (item.weaponSpriteType) {
+        normalized.weaponSpriteType = item.weaponSpriteType;
+    }
+    if (normalized.type === 'weapon') {
+        if (!normalized.subtype && normalized.name) {
+            normalized.subtype = inferWeaponSubtype(normalized.name);
+        }
+        const weaponType = normalized.subtype || normalized.name;
+        if (weaponType && !normalized.physicalDamageType) {
+            normalized.physicalDamageType = determinePhysicalDamageType(weaponType);
+        }
+        if (normalized.twoHanded === undefined) {
+            normalized.twoHanded = !!checkIfTwoHanded(normalized);
+        }
+    }
+    if ((normalized.type === 'weapon' || normalized.type === 'armor') && (!normalized.value || normalized.value <= 0)) {
+        normalized.value = computeItemValue(normalized);
+    }
+    return normalized;
+}
+
+function applyPickupDelay(drop, delay = DROP_PICKUP_DELAY_MS) {
+    if (drop && drop.item) {
+        drop.item = normalizeDropItem(drop.item);
+    }
+    drop.noPickupUntil = Date.now() + delay;
+    return drop;
+}
+
+function ensureTwoHandedEquipConsistency(equip) {
+    if (!equip) return;
+    const isTwoHanded = (item) => item && (item.twoHanded || checkIfTwoHanded(item));
+    const mainhand = equip.mainhand;
+    const offhand = equip.offhand;
+    
+    if (mainhand && isTwoHanded(mainhand)) {
+        equip.offhand = mainhand;
+    } else {
+        if (offhand && offhand === mainhand) {
+            equip.offhand = null;
+        } else if (offhand && mainhand && offhand.id && mainhand.id && offhand.id === mainhand.id) {
+            equip.offhand = null;
+        }
+        if (!mainhand && offhand && isTwoHanded(offhand)) {
+            equip.offhand = null;
+        }
+    }
+}
 
 // Loot tables are now managed in loot.js
 
@@ -247,15 +382,14 @@ const GROUND_Y = 550;
 // NPC color generation is now managed in enemy.js
 
 // Load default level
-console.log('Attempting to load sample_level...');
 const defaultLevel = levelLoader.loadLevel('sample_level');
-console.log('Loaded level data:', defaultLevel.name);
-console.log('Level has portals:', !!defaultLevel.portals, 'count:', (defaultLevel.portals || []).length);
 levelLoader.applyLevelToGameState({}, defaultLevel);
 
 // Per-level game states
 const levelGameStates = new Map();
 const globalPlayers = new Map(); // Global player registry
+const vendorBuyback = []; // Last 10 items sold to vendor by any player (shared across all players)
+const MAX_BUYBACK_ITEMS = 10;
 
 // Helper functions for level-specific game state
 function getLevelGameState(levelName) {
@@ -266,21 +400,48 @@ function getLevelGameState(levelName) {
             const levelState = {
                 enemies: [],
                 worldDrops: [],
+                projectiles: [], // Initialize projectiles array
                 nextEnemyId: 1,
-                vendor: levelData.vendors[0] ? {
-                    id: levelData.vendors[0].id,
-                    x: levelData.vendors[0].x,
-                    y: levelData.vendors[0].y,
-                    w: levelData.vendors[0].width,
-                    h: levelData.vendors[0].height,
-                    vy: 0,
-                    colors: generateNPCColors(),
-                    anim: {timer: 0, index: 0}
-                } : null,
-                spawners: (levelData.spawners || []).map(spawner => ({
-                    ...spawner,
-                    respawnAt: Date.now() + 2000 // Start respawning after 2 seconds
-                })),
+                vendor: levelData.vendors[0] ? (() => {
+                    const vendorData = levelData.vendors[0];
+                    // Calculate vendor Y position on top of the floor
+                    let vendorY = vendorData.y;
+                    const floors = levelData.floors || [];
+                    for (const floor of floors) {
+                        // Check if vendor X position is over this floor
+                        if (vendorData.x >= floor.x && vendorData.x < floor.x + floor.width) {
+                            // Position vendor on top of floor (floor.y - vendor height)
+                            vendorY = floor.y - vendorData.height;
+                            break;
+                        }
+                    }
+                    return {
+                        id: vendorData.id,
+                        x: vendorData.x,
+                        y: vendorY,
+                        w: vendorData.width,
+                        h: vendorData.height,
+                        vy: 0,
+                        colors: generateNPCColors(),
+                        anim: {timer: 0, index: 0}
+                    };
+                })() : null,
+                spawners: (levelData.spawners || []).map(spawner => {
+                    // Ensure all spawner properties are preserved, especially type
+                    const mappedSpawner = {
+                        id: spawner.id,
+                        x: spawner.x,
+                        y: spawner.y,
+                        type: spawner.type || 'basic', // Preserve type, default to basic if missing
+                        respawnTime: spawner.respawnTime || 5000,
+                        visibilityRange: spawner.visibilityRange || 400,
+                        minLevel: spawner.minLevel || 1,
+                        maxLevel: spawner.maxLevel || 3,
+                        currentEnemyId: spawner.currentEnemyId || null,
+                        respawnAt: Date.now() + 2000 // Start respawning after 2 seconds
+                    };
+                    return mappedSpawner;
+                }),
                 portals: levelData.portals || [],
                 levelData: levelData
             };
@@ -317,22 +478,81 @@ function broadcastToLevel(levelName, message) {
     }
 }
 
+function finalizeEnemyDeath(levelName, levelState, enemy) {
+    if (!levelState || !enemy) return;
+
+    // Remove from active enemies list if still present
+    const enemyIndex = levelState.enemies.findIndex(e => e && e.id === enemy.id);
+    if (enemyIndex !== -1) {
+        levelState.enemies.splice(enemyIndex, 1);
+    }
+
+    // First, broadcast enemy death immediately so client removes it from rendering
+    // This ensures the enemy disappears right when animation completes
+    broadcastToLevel(levelName, { type: 'enemyDeath', id: enemy.id });
+    
+    // Then immediately generate and spawn loot (no delay)
+    const enemyType = enemy.type || 'basic';
+    const lootItems = generateLoot(enemyType, enemy.level || 1);
+    for (const lootItem of lootItems) {
+        const drop = {
+            id: `enemy-loot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            x: enemy.x + (Math.random() - 0.5) * 100,
+            y: enemy.y + 10,
+            item: lootItem,
+            vx: (Math.random() - 0.5) * 140,
+            vy: -Math.random() * 120 - 260,
+            pickRadius: 40,
+            grounded: false
+        };
+        applyPickupDelay(drop);
+        levelState.worldDrops.push(drop);
+        // Broadcast loot immediately after enemy death
+        broadcastToLevel(levelName, { type: 'dropItem', ...drop });
+    }
+
+    // Schedule respawn for the originating spawner
+    const spawner = levelState.spawners && levelState.spawners.find(s => s && s.id === enemy.spawnerId);
+    if (spawner) {
+        spawner.currentEnemyId = null;
+        spawner.respawnAt = Date.now() + 8000;
+    }
+}
+
 // Initialize default level game state
 const defaultLevelState = {
     enemies: [],
     worldDrops: [],
     nextEnemyId: 1,
-    vendor: defaultLevel.vendors[0] ? {
-        id: defaultLevel.vendors[0].id,
-        x: defaultLevel.vendors[0].x,
-        y: defaultLevel.vendors[0].y,
-        w: defaultLevel.vendors[0].width,
-        h: defaultLevel.vendors[0].height,
-        vy: 0,
-        colors: generateNPCColors(),
-        anim: {timer: 0, index: 0}
-    } : null,
-    spawners: defaultLevel.spawners || [],
+    vendor: defaultLevel.vendors[0] ? (() => {
+        const vendorData = defaultLevel.vendors[0];
+        // Calculate vendor Y position on top of the floor
+        let vendorY = vendorData.y;
+        const floors = defaultLevel.floors || [];
+        for (const floor of floors) {
+            // Check if vendor X position is over this floor
+            if (vendorData.x >= floor.x && vendorData.x < floor.x + floor.width) {
+                // Position vendor on top of floor (floor.y - vendor height)
+                vendorY = floor.y - vendorData.height;
+                break;
+            }
+        }
+        return {
+            id: vendorData.id,
+            x: vendorData.x,
+            y: vendorY,
+            w: vendorData.width,
+            h: vendorData.height,
+            vy: 0,
+            colors: generateNPCColors(),
+            anim: {timer: 0, index: 0}
+        };
+    })() : null,
+    spawners: (defaultLevel.spawners || []).map(spawner => ({
+        ...spawner,
+        respawnAt: Date.now() + 2000, // Start respawning after 2 seconds
+        currentEnemyId: null // Initialize currentEnemyId
+    })),
     portals: defaultLevel.portals || [],
     levelData: defaultLevel
 };
@@ -351,18 +571,13 @@ const gameState = {
     levelData: defaultLevelState.levelData
 };
 
-console.log('Game state initialized with portals:', gameState.portals.length);
 if (gameState.portals.length > 0) {
-    console.log('Portal details:', gameState.portals);
 }
 
 // Per-player level tracking
 const playerLevels = new Map(); // playerId -> levelName
 
 // Debug: Log vendor colors at startup
-console.log('Server starting with vendor colors:', gameState.vendor ? gameState.vendor.colors : 'No vendor');
-console.log('Loaded level:', defaultLevel.name);
-console.log('Spawners configured:', gameState.spawners.length);
 
 // Loot generation functions are now managed in loot.js
 
@@ -380,7 +595,20 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
 
     ws.on('message', (message) => {
         try {
-            const data = JSON.parse(message);
+            const rawMessage = message.toString();
+            const data = JSON.parse(rawMessage);
+            
+            // Log ALL getBuybackItems messages immediately (before switch) - VERY PROMINENT
+            if (data.type === 'getBuybackItems') {
+            }
+            
+            // Also log if the raw message contains 'buyback' anywhere
+            if (rawMessage.includes('buyback') || rawMessage.includes('Buyback')) {
+            }
+            
+            // Debug logging for shootProjectile messages
+            if (data.type === 'shootProjectile' && data.weaponType === 'Crossbow') {
+            }
             
             switch (data.type) {
                 case 'join':
@@ -406,7 +634,6 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         // Check if we have stored data for this player from a previous session
                         const hasStoredData = loadPlayerData(playerName) !== null;
                         if (hasStoredData) {
-                            console.log(`${playerName} reconnecting (has stored data)`);
                         }
                         
                         playerId = playerName;
@@ -424,17 +651,23 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                     // Check if we have stored data for this player (reconnection)
                     let storedPlayerData = loadPlayerData(playerName);
                     if (storedPlayerData) {
-                        console.log(`${playerName} restoring data from persistent storage`);
                     }
                     
                     // Add player to game state (restore data if available, otherwise use defaults)
                     let initialInventory = storedPlayerData ? storedPlayerData.inventory : new Array(12).fill(null);
                     
+                    // Normalize all inventory items to ensure they have all required properties while preserving locked status
+                    if (initialInventory && Array.isArray(initialInventory)) {
+                        initialInventory = initialInventory.map(item => {
+                            if (!item) return null;
+                            return normalizeDropItem(item);
+                        });
+                    }
+                    
                     // If this is a new player (no stored data), add a training sword to the first inventory slot
                     if (!storedPlayerData && initialInventory[0] === null) {
                         const testSword = createTestSword();
                         initialInventory[0] = testSword;
-                        console.log(`Adding training sword to new player ${playerName}:`, testSword);
                     }
                     
                     // Get visual data from join message or use stored data
@@ -443,11 +676,24 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                     const equipmentColors = data.equipmentColors || (storedPlayerData ? storedPlayerData.equipmentColors : {});
                     
                     // Get equipment from stored data or default
-                    const playerEquip = storedPlayerData ? storedPlayerData.equip : {
+                    let playerEquip = storedPlayerData ? storedPlayerData.equip : {
                         head: null, neck: null, shoulders: null, chest: null,
                         waist: null, legs: null, feet: null, wrists: null,
                         hands: null, mainhand: null, offhand: null, trinket: null
                     };
+                    
+                    // Normalize all equipment items to ensure they have all required properties while preserving locked status
+                    if (playerEquip && typeof playerEquip === 'object') {
+                        const normalizedEquip = {};
+                        for (const [slot, item] of Object.entries(playerEquip)) {
+                            if (!item) {
+                                normalizedEquip[slot] = null;
+                            } else {
+                                normalizedEquip[slot] = normalizeDropItem(item);
+                            }
+                        }
+                        playerEquip = normalizedEquip;
+                    }
                     
                     // Calculate maxHealth from equipment (same formula as client: Health + Endurance*8)
                     // Base stats: Health=0, Endurance=5 (default player stats)
@@ -472,6 +718,35 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                     const storedHealth = storedPlayerData ? storedPlayerData.health : 100;
                     const restoredHealth = Math.min(storedHealth, calculatedMaxHealth);
                     
+                    // Calculate maxMana from equipment (base Mana stat)
+                    // Base stats: Mana=50 (default player stats)
+                    const baseMana = 50;
+                    let totalMana = baseMana;
+                    
+                    // Sum Mana stat from all equipment
+                    Object.keys(playerEquip).forEach(slot => {
+                        const item = playerEquip[slot];
+                        if (item && item.stats && item.stats.Mana) {
+                            totalMana += item.stats.Mana;
+                        }
+                    });
+                    
+                    const calculatedMaxMana = Math.max(1, totalMana);
+                    
+                    // Get stored mana (preserve it, but cap at new maxMana)
+                    const storedMana = storedPlayerData ? (storedPlayerData.mana !== undefined ? storedPlayerData.mana : calculatedMaxMana) : calculatedMaxMana;
+                    const restoredMana = Math.min(storedMana, calculatedMaxMana);
+                    
+                    // Calculate Focus stat from equipment (for mana regeneration bonus)
+                    const baseFocus = 5;
+                    let totalFocus = baseFocus;
+                    Object.keys(playerEquip).forEach(slot => {
+                        const item = playerEquip[slot];
+                        if (item && item.stats && item.stats.Focus) {
+                            totalFocus += item.stats.Focus;
+                        }
+                    });
+                    
                     // Ensure pyreals are properly restored, defaulting to 0 if missing
                     const restoredPyreals = storedPlayerData ? (storedPlayerData.pyreals !== undefined && storedPlayerData.pyreals !== null ? storedPlayerData.pyreals : 0) : 0;
                     
@@ -482,6 +757,9 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         y: storedPlayerData ? storedPlayerData.y : 0,
                         health: restoredHealth,
                         maxHealth: calculatedMaxHealth,
+                        mana: restoredMana,
+                        maxMana: calculatedMaxMana,
+                        stats: { Focus: totalFocus, Mana: calculatedMaxMana }, // Store stats for easy access
                         pyreals: restoredPyreals,
                         justConnected: true, // Flag to prevent immediate saving
                         equip: playerEquip,
@@ -489,7 +767,8 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         shirtColor: shirtColor,
                         pantColor: pantColor,
                         equipmentColors: equipmentColors,
-                        reach: 70 // Default base reach
+                        reach: 70, // Default base reach
+                        manaLockUntil: 0 // Mana regeneration lock timer
                     });
                     
                     // Initialize player with sample level
@@ -511,18 +790,16 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         reach: 70 // Default base reach
                     });
 
-                    // Get level-specific world drops
-                    let groundLootToSend = levelState.worldDrops;
-                    if (storedPlayerData) {
-                        console.log(`${playerName} reconnecting: sending current ground loot (${groundLootToSend.length} items)`);
-                    } else {
-                        console.log(`${playerName} new player: sending current ground loot (${groundLootToSend.length} items)`);
-                    }
-
-                    // Get level-specific game state
+                    // Get level-specific game state (must be declared before use)
                     const playerLevel = playerLevels.get(playerId) || 'sample_level';
                     const levelState = getLevelGameState(playerLevel);
                     const playersInLevel = getPlayersInLevel(playerLevel);
+
+                    // Get level-specific world drops
+                    let groundLootToSend = levelState.worldDrops;
+                    if (storedPlayerData) {
+                    } else {
+                    }
                     
                     // IMPORTANT: Add the current player to playersInLevel so they receive their own player data
                     const currentPlayer = globalPlayers.get(playerId);
@@ -538,23 +815,68 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         floorsToSend = levelState.levelData.floors;
                     }
                     
+                    // Ensure vendor is properly initialized with correct position from level data
+                    let vendorToSend = levelState.vendor;
+                    if (!vendorToSend && levelState.levelData && levelState.levelData.vendors && levelState.levelData.vendors.length > 0) {
+                        // Vendor not initialized, create it from level data
+                        const vendorData = levelState.levelData.vendors[0];
+                        // Calculate vendor Y position on top of the floor
+                        let vendorY = vendorData.y;
+                        const floors = levelState.levelData.floors || [];
+                        for (const floor of floors) {
+                            // Check if vendor X position is over this floor
+                            if (vendorData.x >= floor.x && vendorData.x < floor.x + floor.width) {
+                                // Position vendor on top of floor (floor.y - vendor height)
+                                vendorY = floor.y - vendorData.height;
+                                break;
+                            }
+                        }
+                        vendorToSend = {
+                            id: vendorData.id,
+                            x: vendorData.x,
+                            y: vendorY,
+                            w: vendorData.width,
+                            h: vendorData.height,
+                            vy: 0,
+                            colors: generateNPCColors(),
+                            anim: {timer: 0, index: 0}
+                        };
+                        // Update levelState with the vendor
+                        levelState.vendor = vendorToSend;
+                    } else if (vendorToSend && levelState.levelData && levelState.levelData.vendors && levelState.levelData.vendors.length > 0) {
+                        // Ensure vendor position matches level data and is on the floor
+                        const vendorData = levelState.levelData.vendors[0];
+                        vendorToSend.x = vendorData.x;
+                        vendorToSend.w = vendorData.width;
+                        vendorToSend.h = vendorData.height;
+                        // Calculate vendor Y position on top of the floor
+                        let vendorY = vendorData.y;
+                        const floors = levelState.levelData.floors || [];
+                        for (const floor of floors) {
+                            // Check if vendor X position is over this floor
+                            if (vendorData.x >= floor.x && vendorData.x < floor.x + floor.width) {
+                                // Position vendor on top of floor (floor.y - vendor height)
+                                vendorY = floor.y - vendorData.height;
+                                break;
+                            }
+                        }
+                        vendorToSend.y = vendorY;
+                    }
+                    
                     // Send current game state to new player (level-specific)
                     const gameStateMsg = {
                         type: 'gameState',
                         players: playersInLevel,
                         enemies: levelState.enemies,
                         worldDrops: levelState.worldDrops,
-                        vendor: levelState.vendor,
+                        vendor: vendorToSend,
                         portals: levelState.portals || [],
                         spawners: levelState.spawners,
                         floors: floorsToSend
                     };
                     
                     // Debug: Log vendor and floor data being sent
-                    console.log(`Sending vendor to ${playerName} - hasVendor: ${!!levelState.vendor}, hasColors: ${!!(levelState.vendor && levelState.vendor.colors)}`);
-                    console.log(`Sending floors to ${playerName} - floors count: ${gameStateMsg.floors.length}`);
                     if (gameStateMsg.floors.length > 0) {
-                        console.log(`First floor being sent:`, gameStateMsg.floors[0]);
                     } else {
                         console.warn(`WARNING: No floors found for level ${playerLevel}! levelData:`, !!levelState.levelData, 'floors:', levelState.levelData?.floors);
                     }
@@ -562,11 +884,15 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                     // Send player's own equipment and inventory data FIRST, before gameState
                     // This ensures inventory is loaded before the game renders
                     const currentPlayerData = globalPlayers.get(playerId);
+                    const inventoryItemCount = currentPlayerData.inventory ? currentPlayerData.inventory.filter(i => i !== null).length : 0;
+                    const equippedItemCount = currentPlayerData.equip ? Object.values(currentPlayerData.equip).filter(i => i !== null).length : 0;
                     const playerDataMsg = {
                         type: 'playerData',
                         equip: currentPlayerData.equip,
                         inventory: currentPlayerData.inventory,
-                        pyreals: currentPlayerData.pyreals || 0 // Ensure pyreals are sent to client
+                        pyreals: currentPlayerData.pyreals || 0, // Ensure pyreals are sent to client
+                        mana: currentPlayerData.mana || currentPlayerData.maxMana || 50,
+                        maxMana: currentPlayerData.maxMana || 50
                     };
                     ws.send(JSON.stringify(playerDataMsg));
                     
@@ -575,9 +901,7 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
 
                     // Log the reconnection details for debugging
                     if (storedPlayerData) {
-                        console.log(`${playerName} reconnected successfully with ${groundLootToSend.length} ground loot items (stored snapshot)`);
                     } else {
-                        console.log(`${playerName} joined the game as new player with ${groundLootToSend.length} ground loot items (current state)`);
                     }
                     break;
 
@@ -707,13 +1031,11 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                 case 'equipUpdate':
                     // Equipment updates are now handled server-side via moveItem operations
                     // Clients should not send equipUpdate messages - server is authoritative
-                    console.log(`Ignoring equipUpdate from ${playerName} - server is authoritative for equipment state`);
                     break;
 
                 case 'inventoryUpdate':
                     if (playerId && gameState.players.has(playerId) && data.inventory) {
                         const player = gameState.players.get(playerId);
-                        console.log(`Player ${playerName} updating inventory:`, data.inventory);
                         player.inventory = data.inventory;
                         // broadcast to players in the same level so they can render current inventory
                         const inventoryLevel = playerLevels.get(playerId) || 'sample_level';
@@ -749,7 +1071,8 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         Object.assign(enemyUpdateLevelState.enemies[enemyIndex], data);
                         
                         // Broadcast enemy update to other players in the same level
-                        broadcastToLevel(enemyUpdatePlayerLevel, {
+                        const enemy = enemyUpdateLevelState.enemies[enemyIndex];
+                        const updateData = {
                             type: 'enemyUpdate',
                             id: data.id,
                             x: data.x,
@@ -757,11 +1080,22 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                             health: data.health,
                             maxHealth: data.maxHealth,
                             level: data.level,
-                            type: data.type,
+                            enemyType: enemy.type || data.type, // Always include enemy type (as enemyType to avoid conflict with message type)
                             dead: data.dead,
-                            name: data.name,
-                            colors: enemyUpdateLevelState.enemies[enemyIndex].colors
-                        });
+                            name: data.name
+                        };
+                        // Only include colors for non-sprite-based enemies
+                        if (enemy.type !== 'waterwisp' && enemy.type !== 'firewisp' && enemy.type !== 'earthwisp' && enemy.type !== 'windwisp' && enemy.colors) {
+                            updateData.colors = enemy.colors;
+                        }
+                        // Include Water Wisp and Fire Wisp specific properties
+                        if (enemy.type === 'waterwisp' || enemy.type === 'firewisp' || enemy.type === 'earthwisp' || enemy.type === 'windwisp') {
+                            updateData.hurtAnimTime = enemy.hurtAnimTime;
+                            updateData.dieAnimProgress = enemy.dieAnimProgress;
+                            updateData.attackAnimTime = enemy.attackAnimTime;
+                            updateData.facing = enemy.facing;
+                        }
+                        broadcastToLevel(enemyUpdatePlayerLevel, updateData);
                     }
                     break;
 
@@ -772,57 +1106,50 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                     const targetEnemy = attackLevelState.enemies.find(e => e.id === data.id);
                     if (targetEnemy && !targetEnemy.dead) {
                         targetEnemy.health -= data.damage;
+                        targetEnemy._healthChanged = true; // Mark health change for immediate update
+                        
+                        // Set hurt animation for Water Wisp and Fire Wisp
+                        if (targetEnemy.type === 'waterwisp' || targetEnemy.type === 'firewisp' || targetEnemy.type === 'earthwisp' || targetEnemy.type === 'windwisp') {
+                            targetEnemy.hurtAnimTime = 0.3; // 0.3 second hurt animation
+                        }
+                        
                         if (targetEnemy.health <= 0) {
                             targetEnemy.dead = true;
-                            // Remove dead enemy from level's array
-                            const enemyIndex = attackLevelState.enemies.findIndex(e => e.id === targetEnemy.id);
-                            if (enemyIndex !== -1) {
-                                attackLevelState.enemies.splice(enemyIndex, 1);
-                            }
-                            // Spawn loot when enemy dies using loot tables
-                            const enemyType = targetEnemy.type || 'basic';
-                            const lootItems = generateLoot(enemyType, targetEnemy.level || 1);
-                            
-                            for (const lootItem of lootItems) {
-                                // Ensure weapon damage types are explicitly set
-                                if (lootItem.type === 'weapon' && !lootItem.physicalDamageType) {
-                                    console.warn(`[server] Weapon ${lootItem.name} missing physicalDamageType, ensuring it's set`);
-                                    // This shouldn't happen as generateLoot sets it, but safety check
-                                }
-                                const dropX = targetEnemy.x + (Math.random() - 0.5) * 100;
-                                const dropY = targetEnemy.y + 10;
-                                const drop = {
-                                    id: `enemy-loot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                                    x: dropX,
-                                    y: dropY,
-                                    item: lootItem,
-                                    vx: (Math.random() - 0.5) * 140,
-                                    vy: -Math.random() * 120 - 260,
-                                    pickRadius: 40,
-                                    grounded: false,
-                                    noPickupUntil: Date.now() + 300
+                            targetEnemy.isDead = true;
+                            targetEnemy.health = 0;
+                            // Set death animation progress for Water Wisp and Fire Wisp
+                            if (targetEnemy.type === 'waterwisp' || targetEnemy.type === 'firewisp' || targetEnemy.type === 'earthwisp' || targetEnemy.type === 'windwisp') {
+                                targetEnemy.dieAnimProgress = 0;
+                                // Broadcast death state immediately so client can play death animation
+                                const deathUpdateData = {
+                                    type: 'enemyUpdate',
+                                    id: targetEnemy.id,
+                                    health: 0,
+                                    maxHealth: targetEnemy.maxHealth,
+                                    dead: true,
+                                    isDead: true,
+                                    dieAnimProgress: 0,
+                                    enemyType: targetEnemy.type
                                 };
-                                attackLevelState.worldDrops.push(drop);
-                                // Broadcasting loot drop to players in this level
-                                if (lootItem.type === 'weapon') {
-                                    console.log(`[server] Broadcasting weapon drop: ${lootItem.name}, physicalDamageType: ${lootItem.physicalDamageType}, elementalDamageType: ${lootItem.elementalDamageType || 'none'}`);
-                                }
-                                broadcastToLevel(attackPlayerLevel, { type: 'dropItem', ...drop });
+                                broadcastToLevel(attackPlayerLevel, deathUpdateData);
+                                // Don't finalize death immediately - wait for animation to complete
+                            } else {
+                                // For non-wisp enemies, finalize death immediately
+                                finalizeEnemyDeath(attackPlayerLevel, attackLevelState, targetEnemy);
                             }
-                            // Schedule respawn using level-specific spawners
-                            const spawner = attackLevelState.spawners.find(s => s.id === targetEnemy.spawnerId);
-                            if (spawner) {
-                                spawner.currentEnemyId = null;
-                                spawner.respawnAt = Date.now() + 8000; // 8 seconds respawn
-                            }
-                            broadcastToLevel(attackPlayerLevel, { type: 'enemyDeath', id: targetEnemy.id });
                         } else {
-                            broadcastToLevel(attackPlayerLevel, { 
+                            const updateData = { 
                                 type: 'enemyUpdate', 
                                 id: targetEnemy.id, 
                                 health: targetEnemy.health,
                                 colors: targetEnemy.colors
-                            });
+                            };
+                            // Include hurt animation for Water Wisp and Fire Wisp
+                            if (targetEnemy.type === 'waterwisp' || targetEnemy.type === 'firewisp' || targetEnemy.type === 'earthwisp' || targetEnemy.type === 'windwisp') {
+                                updateData.hurtAnimTime = targetEnemy.hurtAnimTime;
+                                updateData.facing = targetEnemy.facing;
+                            }
+                            broadcastToLevel(attackPlayerLevel, updateData);
                         }
                     }
                     break;
@@ -834,16 +1161,10 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         const targetLevel = data.targetLevel;
                         
                         if (targetLevel) {
-                            console.log(`Player ${player.name} attempting to enter portal to level: ${targetLevel}`);
                             
                             // Load the target level
                             const newLevelData = levelLoader.loadLevel(targetLevel);
                             if (newLevelData) {
-                                console.log(`Loaded level: ${newLevelData.name}`);
-                                console.log(`- Floors: ${newLevelData.floors ? newLevelData.floors.length : 0}`);
-                                console.log(`- Vendors: ${newLevelData.vendors ? newLevelData.vendors.length : 0}`);
-                                console.log(`- Spawners: ${newLevelData.spawners ? newLevelData.spawners.length : 0}`);
-                                console.log(`- Portals: ${newLevelData.portals ? newLevelData.portals.length : 0}`);
                                 
                                 // Get the old level before updating
                                 const oldLevel = playerLevels.get(playerId) || 'sample_level';
@@ -907,22 +1228,12 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                         spawner.respawnAt = Date.now() + 2000;
                                         spawner.currentEnemyId = null; // Clear any existing enemy references
                                     });
-                                    console.log(`Reset ${levelState.spawners.length} spawners for level ${targetLevel} - enemies will spawn in 2 seconds`);
                                 }
                                 
-                                console.log('Level change data being sent:');
-                                console.log('- Vendor:', levelState.vendor ? `${levelState.vendor.id} at (${levelState.vendor.x}, ${levelState.vendor.y})` : 'None');
-                                console.log('- Spawners:', levelState.spawners.length);
-                                console.log('- Enemies:', levelState.enemies.length);
-                                console.log('- World Drops:', levelState.worldDrops.length);
-                                console.log('- Floors:', floorsToSend.length);
                                 
-                                console.log('Sending levelChange message:', JSON.stringify(levelChangeMsg, null, 2));
                                 ws.send(JSON.stringify(levelChangeMsg));
                                 
-                                console.log(`Player ${player.name} successfully entered portal to level: ${targetLevel}`);
                             } else {
-                                console.log(`Failed to load level: ${targetLevel}`);
                                 // Send error message to player
                                 ws.send(JSON.stringify({
                                     type: 'chatMessage',
@@ -953,17 +1264,32 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         }
                         
                         if (item) {
-                                                    const drop = {
-                            id: `drop-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                            x: data.x,
-                            y: data.y,
-                            item: item,
-                            vx: 0, // Initial horizontal velocity
-                            vy: 0, // Initial vertical velocity
-                            pickRadius: 40,
-                            grounded: false,
-                            noPickupUntil: Date.now() + 300
-                        };
+                            // Calculate direction away from player based on drop position
+                            // If drop is to the right of player, throw right; otherwise left
+                            // If at same position, randomly choose direction
+                            const playerCenterX = player.x + 24; // Player center
+                            const dropX = data.x || playerCenterX;
+                            let direction = dropX > playerCenterX ? 'right' : 'left';
+                            if (Math.abs(dropX - playerCenterX) < 10) {
+                                // If very close to player center, randomly choose direction
+                                direction = Math.random() > 0.5 ? 'right' : 'left';
+                            }
+                            
+                            // Create arc motion away from player
+                            const horizontalVelocity = direction === 'right' ? 200 : -200;
+                            const verticalVelocity = -150; // Upward initial velocity for arc
+                            
+                            const drop = {
+                                id: `drop-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                                x: data.x || playerCenterX,
+                                y: data.y || (player.y + 16),
+                                item: item,
+                                vx: horizontalVelocity,
+                                vy: verticalVelocity,
+                                pickRadius: 40,
+                                grounded: false
+                            };
+                            applyPickupDelay(drop);
                             
                             dropLevelState.worldDrops.push(drop);
                             
@@ -979,13 +1305,12 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                 inventory: player.inventory
                             }));
                             
-                                                           // Send updated equipment to the player
-                               ws.send(JSON.stringify({
-                                   type: 'equipmentUpdated',
-                                   equip: player.equip
-                               }));
+                            ensureTwoHandedEquipConsistency(player.equip);
+                            ws.send(JSON.stringify({
+                                type: 'equipmentUpdated',
+                                equip: player.equip
+                            }));
                             
-                            console.log(`Player ${playerName} dropped ${item.name} to world at (${data.x}, ${data.y})`);
                         }
                     }
                     break;
@@ -998,19 +1323,18 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         const pickupLevelState = getLevelGameState(pickupPlayerLevel);
                         const { dropId, slotIndex } = data;
                         
-                        console.log(`Player ${playerName} picking up item from drop ${dropId} to slot ${slotIndex}`);
                         
                         // Find the world drop
                         const dropIndex = pickupLevelState.worldDrops.findIndex(d => d.id === dropId);
                         if (dropIndex !== -1) {
                             const drop = pickupLevelState.worldDrops[dropIndex];
-                            const item = drop.item;
+                            const item = drop.item ? normalizeDropItem(drop.item) : null;
                             
                             if (item && slotIndex !== null && slotIndex < player.inventory.length) {
                                 // Check if destination slot is occupied
                                 if (player.inventory[slotIndex]) {
                                     // Swap items - put the equipped item back in the world
-                                    const displacedItem = player.inventory[slotIndex];
+                                    const displacedItem = normalizeDropItem(player.inventory[slotIndex]);
                                     player.inventory[slotIndex] = item;
                                     
                                     // Create a new world drop for the displaced item
@@ -1022,9 +1346,9 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                         vx: 0,
                                         vy: 0,
                                         pickRadius: 40,
-                                        grounded: false,
-                                        noPickupUntil: Date.now() + 300
+                                        grounded: false
                                     };
+                                    applyPickupDelay(newDrop);
                                     
                                     pickupLevelState.worldDrops.push(newDrop);
                                     
@@ -1049,7 +1373,6 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                 });
                                 
                                 // Send updated inventory to the player
-                                console.log(`Sending inventoryUpdated to ${playerName} for pickup:`, player.inventory);
                                 ws.send(JSON.stringify({
                                     type: 'inventoryUpdated',
                                     inventory: player.inventory
@@ -1070,8 +1393,6 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         const moveLevelState = getLevelGameState(movePlayerLevel);
                         const { itemId, fromWhere, fromIndex, fromSlot, toWhere, toIndex, toSlot } = data;
                         
-                        console.log(`Player ${playerName} moving item ${itemId} from ${fromWhere} to ${toWhere}`);
-                        console.log(`Move details: fromWhere=${fromWhere}, fromIndex=${fromIndex}, fromSlot=${fromSlot}, toWhere=${toWhere}, toIndex=${toIndex}, toSlot=${toSlot}`);
                         
                         let sourceItem = null;
                         
@@ -1113,14 +1434,15 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                             // Find item in world drops
                             const worldDropIndex = moveLevelState.worldDrops.findIndex(d => d.item && d.item.id === itemId);
                             if (worldDropIndex !== -1) {
-                                sourceItem = moveLevelState.worldDrops[worldDropIndex].item;
-                                moveLevelState.worldDrops.splice(worldDropIndex, 1);
+                                const worldDrop = moveLevelState.worldDrops.splice(worldDropIndex, 1)[0];
+                                sourceItem = worldDrop.item;
                                 // Broadcast removal of world drop to players in this level only
-                                broadcastToLevel(movePlayerLevel, { type: 'pickupItem', dropId: moveLevelState.worldDrops[worldDropIndex]?.id, playerId: playerId });
+                                broadcastToLevel(movePlayerLevel, { type: 'pickupItem', dropId: worldDrop.id, playerId: playerId });
                             }
                         }
                         
                         if (sourceItem) {
+                            sourceItem = normalizeDropItem(sourceItem);
                             // Place the item in the destination
                             if (toWhere === 'bag' && toIndex !== null && toIndex < player.inventory.length) {
                                 // Check if destination slot is occupied
@@ -1136,17 +1458,27 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                         player.equip[fromSlot] = tempItem;
                                     } else if (fromWhere === 'world') {
                                         // If picking up from world with a swap, drop the displaced item to world
+                                        // Calculate direction away from player for arc motion
+                                        const playerCenterX = player.x + 24;
+                                        const dropX = data.x || playerCenterX;
+                                        let direction = dropX > playerCenterX ? 'right' : 'left';
+                                        if (Math.abs(dropX - playerCenterX) < 10) {
+                                            direction = Math.random() > 0.5 ? 'right' : 'left';
+                                        }
+                                        const horizontalVelocity = direction === 'right' ? 200 : -200;
+                                        const verticalVelocity = -150;
+                                        
                                         const displacedDrop = {
                                             id: `move-displaced-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                                            x: data.x || player.x,
-                                            y: data.y || player.y,
-                                            item: tempItem,
-                                            vx: 0,
-                                            vy: 0,
+                                            x: data.x || playerCenterX,
+                                            y: data.y || (player.y + 16),
+                                            item: normalizeDropItem(tempItem),
+                                            vx: horizontalVelocity,
+                                            vy: verticalVelocity,
                                             pickRadius: 40,
-                                            grounded: false,
-                                            noPickupUntil: Date.now() + 300
+                                            grounded: false
                                         };
+                                        applyPickupDelay(displacedDrop);
                                         moveLevelState.worldDrops.push(displacedDrop);
                                         // Broadcast the new world drop to players in this level only
                                         broadcastToLevel(movePlayerLevel, {
@@ -1159,7 +1491,6 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                 }
                                 
                                 // Send updated inventory to the player
-                                console.log(`Sending inventoryUpdated to ${playerName}:`, player.inventory);
                                 ws.send(JSON.stringify({
                                     type: 'inventoryUpdated',
                                     inventory: player.inventory
@@ -1167,6 +1498,7 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                 
                                 // Also send equipment update if item came from equipment (for swaps)
                                 if (fromWhere === 'equip') {
+                                    ensureTwoHandedEquipConsistency(player.equip);
                                     ws.send(JSON.stringify({
                                         type: 'equipmentUpdated',
                                         equip: player.equip
@@ -1192,8 +1524,8 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                         player.equip[toSlot] = sourceItem;
                                     }
                                     
-                                    console.log(`Player ${player.name} equipped ${sourceItem.name} to ${toSlot}`);
                                     // Save player data immediately when equipment changes
+                                    ensureTwoHandedEquipConsistency(player.equip);
                                     savePlayerData(player.name, player);
                                     
                                     // Send updated equipment to the player
@@ -1210,11 +1542,11 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                     });
                                     
                                     // Save player data immediately after equipment change
+                                    ensureTwoHandedEquipConsistency(player.equip);
                                     savePlayerData(playerName, player);
                                     
                                     // Also send inventory update if item came from bag
                                     if (fromWhere === 'bag') {
-                                        console.log(`Sending inventoryUpdated to ${playerName} for armor equip from bag:`, player.inventory);
                                         ws.send(JSON.stringify({
                                             type: 'inventoryUpdated',
                                             inventory: player.inventory
@@ -1225,39 +1557,111 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                     // Check if weapon is two-handed
                                     const isTwoHanded = sourceItem.twoHanded || checkIfTwoHanded(sourceItem);
                                     
-                                    // If equipping to offhand and mainhand is two-handed, unequip the two-handed weapon first
+                                    // Two-handed weapons always occupy mainhand; reroute offhand drops
+                                    if (isTwoHanded && toSlot === 'offhand') {
+                                        toSlot = 'mainhand';
+                                    }
+                                    
+                                    // Prevent equipping two-handed weapons to offhand
+                                    if (isTwoHanded && toSlot === 'offhand') {
+                                        // Reject the move - two-handed weapons must go to mainhand
+                                        // Put the item back where it came from
+                                        if (fromWhere === 'bag' && fromIndex !== null && fromIndex < player.inventory.length) {
+                                            player.inventory[fromIndex] = sourceItem;
+                                        } else if (fromWhere === 'equip' && fromSlot) {
+                                            player.equip[fromSlot] = sourceItem;
+                                        } else if (fromWhere === 'world') {
+                                            // Put it back in world drops
+                                            const drop = {
+                                                id: `rejected-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                                                x: player.x + (Math.random() - 0.5) * 100,
+                                                y: player.y + 10,
+                                                item: sourceItem,
+                                                vx: (Math.random() - 0.5) * 140,
+                                                vy: -Math.random() * 120 - 260,
+                                                pickRadius: 40,
+                                                grounded: false
+                                            };
+                                            applyPickupDelay(drop);
+                                            moveLevelState.worldDrops.push(drop);
+                                            broadcastToLevel(movePlayerLevel, { type: 'dropItem', ...drop });
+                                        }
+                                        
+                                        // Send error message to client
+                                        ws.send(JSON.stringify({
+                                            type: 'moveItemRejected',
+                                            reason: 'Two-handed weapons cannot be equipped to offhand',
+                                            itemId: sourceItem.id
+                                        }));
+                                        
+                                        // Send updated inventory/equipment to sync state
+                                        if (fromWhere === 'bag') {
+                                            ws.send(JSON.stringify({
+                                                type: 'inventoryUpdated',
+                                                inventory: player.inventory
+                                            }));
+                                        } else if (fromWhere === 'equip') {
+                                            ensureTwoHandedEquipConsistency(player.equip);
+                                            ws.send(JSON.stringify({
+                                                type: 'equipmentUpdated',
+                                                equip: player.equip
+                                            }));
+                                        }
+                                        
+                                        // Skip the rest of the weapon equipping logic
+                                        break;
+                                    }
+                                    
+                                    // Prevent equipping to offhand when mainhand has a two-handed weapon
                                     if (toSlot === 'offhand' && player.equip.mainhand) {
                                         const mainhandIsTwoHanded = player.equip.mainhand.twoHanded || checkIfTwoHanded(player.equip.mainhand);
                                         if (mainhandIsTwoHanded) {
-                                            // Unequip the two-handed weapon from mainhand first
-                                            const mainhandWeapon = player.equip.mainhand;
-                                            
-                                            // Find empty inventory slot
-                                            let emptySlot = player.inventory.findIndex(slot => slot === null);
-                                            if (emptySlot !== -1) {
-                                                player.inventory[emptySlot] = mainhandWeapon;
-                                            } else {
-                                                // Drop to world if inventory is full
+                                            // Reject the move - cannot equip to offhand when mainhand has two-handed weapon
+                                            // Put the item back where it came from
+                                            if (fromWhere === 'bag' && fromIndex !== null && fromIndex < player.inventory.length) {
+                                                player.inventory[fromIndex] = sourceItem;
+                                            } else if (fromWhere === 'equip' && fromSlot) {
+                                                player.equip[fromSlot] = sourceItem;
+                                            } else if (fromWhere === 'world') {
+                                                // Put it back in world drops
                                                 const drop = {
-                                                    id: `twohand-unequip-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                                                    id: `rejected-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
                                                     x: player.x + (Math.random() - 0.5) * 100,
                                                     y: player.y + 10,
-                                                    item: mainhandWeapon,
+                                                    item: sourceItem,
                                                     vx: (Math.random() - 0.5) * 140,
                                                     vy: -Math.random() * 120 - 260,
                                                     pickRadius: 40,
-                                                    grounded: false,
-                                                    noPickupUntil: Date.now() + 300
+                                                    grounded: false
                                                 };
+                                                applyPickupDelay(drop);
                                                 moveLevelState.worldDrops.push(drop);
                                                 broadcastToLevel(movePlayerLevel, { type: 'dropItem', ...drop });
                                             }
                                             
-                                            // Clear both mainhand and offhand (since two-handed weapon was in both)
-                                            player.equip.mainhand = null;
-                                            player.equip.offhand = null;
+                                            // Send error message to client
+                                            ws.send(JSON.stringify({
+                                                type: 'moveItemRejected',
+                                                reason: 'Cannot equip to offhand while mainhand has a two-handed weapon',
+                                                itemId: sourceItem.id
+                                            }));
                                             
-                                            // Continue with equipping the new weapon to offhand
+                                            // Send updated inventory/equipment to sync state
+                                            if (fromWhere === 'bag') {
+                                                ws.send(JSON.stringify({
+                                                    type: 'inventoryUpdated',
+                                                    inventory: player.inventory
+                                                }));
+                                            } else if (fromWhere === 'equip') {
+                                                ensureTwoHandedEquipConsistency(player.equip);
+                                                ws.send(JSON.stringify({
+                                                    type: 'equipmentUpdated',
+                                                    equip: player.equip
+                                                }));
+                                            }
+                                            
+                                            // Skip the rest of the weapon equipping logic
+                                            break;
                                         }
                                     }
                                     
@@ -1286,11 +1690,16 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                                 weaponsToMove.push(player.equip.offhand);
                                             }
                                             
+                                            // Track which inventory slots we use for displaced weapons
+                                            // (so we don't accidentally clear them when clearing the source slot)
+                                            const usedInventorySlots = new Set();
+                                            
                                             // Move all weapons to inventory or world
                                             for (const weapon of weaponsToMove) {
                                                 let emptySlot = player.inventory.findIndex(slot => slot === null);
                                                 if (emptySlot !== -1) {
                                                     player.inventory[emptySlot] = weapon;
+                                                    usedInventorySlots.add(emptySlot);
                                                 } else {
                                                     // Drop to world if inventory is full
                                                     const drop = {
@@ -1301,9 +1710,9 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                                         vx: (Math.random() - 0.5) * 140,
                                                         vy: -Math.random() * 120 - 260,
                                                         pickRadius: 40,
-                                                        grounded: false,
-                                                        noPickupUntil: Date.now() + 300
+                                                        grounded: false
                                                     };
+                                                    applyPickupDelay(drop);
                                                     moveLevelState.worldDrops.push(drop);
                                                     broadcastToLevel(movePlayerLevel, { type: 'dropItem', ...drop });
                                                 }
@@ -1314,8 +1723,13 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                             player.equip.offhand = sourceItem;
                                             
                                             // Put the source item location (if it came from inventory, clear that slot)
+                                            // BUT only if we didn't already use that slot for a displaced weapon
                                             if (fromWhere === 'bag' && fromIndex !== null && fromIndex < player.inventory.length) {
-                                                player.inventory[fromIndex] = null;
+                                                // Only clear the slot if we didn't put a displaced weapon there
+                                                if (!usedInventorySlots.has(fromIndex)) {
+                                                    player.inventory[fromIndex] = null;
+                                                }
+                                                // If we used this slot for a displaced weapon, it's already filled, so do nothing
                                             } else if (fromWhere === 'equip' && fromSlot) {
                                                 player.equip[fromSlot] = null;
                                             }
@@ -1348,8 +1762,22 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                             // Clear offhand if it exists (it will be replaced by the two-handed weapon)
                                             if (player.equip.offhand && player.equip.offhand !== sourceItem) {
                                                 const offhandItem = player.equip.offhand;
-                                                // Try to find empty inventory slot
-                                                let emptySlot = player.inventory.findIndex(slot => slot === null);
+                                                
+                                                // When finding an empty slot, exclude the source slot (fromIndex) if the item came from inventory
+                                                // to avoid overwriting it before we clear it
+                                                let emptySlot = -1;
+                                                if (fromWhere === 'bag' && fromIndex !== null && fromIndex < player.inventory.length) {
+                                                    // Find empty slot, but prefer slots other than fromIndex
+                                                    emptySlot = player.inventory.findIndex((slot, idx) => slot === null && idx !== fromIndex);
+                                                    // If no other empty slot found, can use fromIndex since we're about to clear it anyway
+                                                    if (emptySlot === -1 && player.inventory[fromIndex] === null) {
+                                                        emptySlot = fromIndex;
+                                                    }
+                                                } else {
+                                                    // Item came from equipment or world, can use any empty slot
+                                                    emptySlot = player.inventory.findIndex(slot => slot === null);
+                                                }
+                                                
                                                 if (emptySlot !== -1) {
                                                     player.inventory[emptySlot] = offhandItem;
                                                 } else {
@@ -1362,9 +1790,9 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                                         vx: (Math.random() - 0.5) * 140,
                                                         vy: -Math.random() * 120 - 260,
                                                         pickRadius: 40,
-                                                        grounded: false,
-                                                        noPickupUntil: Date.now() + 300
+                                                        grounded: false
                                                     };
+                                                    applyPickupDelay(drop);
                                                     moveLevelState.worldDrops.push(drop);
                                                     broadcastToLevel(movePlayerLevel, { type: 'dropItem', ...drop });
                                                 }
@@ -1372,10 +1800,24 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                             // Two-handed weapon occupies both slots (for UI display)
                                             player.equip.offhand = sourceItem;
                                         }
+                                        
+                                        // Clear the source inventory slot if item came from inventory
+                                        // (but only if we didn't use it for the offhand item above)
+                                        if (fromWhere === 'bag' && fromIndex !== null && fromIndex < player.inventory.length) {
+                                            // Only clear if we didn't use this slot for the offhand item
+                                            // Check if we put offhand item in this slot
+                                            if (!(isTwoHanded && toSlot === 'mainhand' && 
+                                                  player.equip.offhand !== sourceItem && 
+                                                  player.inventory[fromIndex] !== null)) {
+                                                player.inventory[fromIndex] = null;
+                                            }
+                                        } else if (fromWhere === 'equip' && fromSlot) {
+                                            player.equip[fromSlot] = null;
+                                        }
                                     }
                                     
-                                    console.log(`Player ${player.name} equipped ${sourceItem.name} to ${toSlot}`);
                                     // Save player data immediately when equipment changes
+                                    ensureTwoHandedEquipConsistency(player.equip);
                                     savePlayerData(player.name, player);
                                     
                                     // Send updated equipment to the player
@@ -1396,7 +1838,6 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                     
                                     // Also send inventory update if item came from bag
                                     if (fromWhere === 'bag') {
-                                        console.log(`Sending inventoryUpdated to ${playerName} for weapon equip from bag:`, player.inventory);
                                         ws.send(JSON.stringify({
                                             type: 'inventoryUpdated',
                                             inventory: player.inventory
@@ -1406,15 +1847,15 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                 
                                 // Also send updated inventory if item came from bag (for other cases)
                                 if (fromWhere === 'bag') {
-                                    console.log(`Sending inventoryUpdated to ${playerName} for other cases from bag:`, player.inventory);
                                     ws.send(JSON.stringify({
                                         type: 'inventoryUpdated',
                                         inventory: player.inventory
                                     }));
                                 }
                                 
-                                // Always send equipment update if item came from equipment
-                                if (fromWhere === 'equip') {
+                                    // Always send equipment update if item came from equipment
+                                    if (fromWhere === 'equip') {
+                                        ensureTwoHandedEquipConsistency(player.equip);
                                     ws.send(JSON.stringify({
                                         type: 'equipmentUpdated',
                                         equip: player.equip
@@ -1443,7 +1884,6 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         const dropLevelState = getLevelGameState(dropPlayerLevel);
                         const { itemId, fromWhere, fromIndex, fromSlot, x, y } = data;
                         
-                        console.log(`Player ${playerName} dropping item ${itemId} from ${fromWhere}`);
                         
                         let droppedItem = null;
                         
@@ -1465,18 +1905,31 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         }
                         
                         if (droppedItem) {
+                            // Calculate direction away from player based on drop position
+                            const playerCenterX = player.x + 24; // Player center
+                            const dropX = x || playerCenterX;
+                            let direction = dropX > playerCenterX ? 'right' : 'left';
+                            if (Math.abs(dropX - playerCenterX) < 10) {
+                                // If very close to player center, randomly choose direction
+                                direction = Math.random() > 0.5 ? 'right' : 'left';
+                            }
+                            
+                            // Create arc motion away from player
+                            const horizontalVelocity = direction === 'right' ? 200 : -200;
+                            const verticalVelocity = -150; // Upward initial velocity for arc
+                            
                             // Create world drop
                             const drop = {
                                 id: `sell-drop-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                                x: x || player.x,
-                                y: y || player.y,
+                                x: x || playerCenterX,
+                                y: y || (player.y + 16),
                                 item: droppedItem,
-                                vx: 0,
-                                vy: 0,
+                                vx: horizontalVelocity,
+                                vy: verticalVelocity,
                                 pickRadius: 40,
-                                grounded: false,
-                                noPickupUntil: Date.now() + 300
+                                grounded: false
                             };
+                            applyPickupDelay(drop);
                             
                             dropLevelState.worldDrops.push(drop);
                             
@@ -1488,12 +1941,12 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                             
                             // Send updated inventory/equipment to the player
                             if (fromWhere === 'bag') {
-                                console.log(`Sending inventoryUpdated to ${playerName} for drop from bag:`, player.inventory);
                                 ws.send(JSON.stringify({
                                     type: 'inventoryUpdated',
                                     inventory: player.inventory
                                 }));
                             } else if (fromWhere === 'equip') {
+                                ensureTwoHandedEquipConsistency(player.equip);
                                 ws.send(JSON.stringify({
                                     type: 'equipmentUpdated',
                                     equip: player.equip
@@ -1520,7 +1973,6 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         const sellPlayerLevel = playerLevels.get(playerId) || 'sample_level';
                         const { itemId, fromWhere, fromIndex, fromSlot } = data;
                         
-                        console.log(`Player ${playerName} selling item ${itemId} from ${fromWhere}`);
                         
                         let soldItem = null;
                         
@@ -1528,6 +1980,14 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         if (fromWhere === 'bag' && fromIndex !== null && fromIndex < player.inventory.length) {
                             soldItem = player.inventory[fromIndex];
                             if (soldItem && soldItem.id === itemId) {
+                                // Check if item is locked
+                                if (soldItem.locked) {
+                                    ws.send(JSON.stringify({
+                                        type: 'error',
+                                        message: 'Cannot sell locked items!'
+                                    }));
+                                    return;
+                                }
                                 player.inventory[fromIndex] = null;
                             } else {
                                 soldItem = null;
@@ -1535,6 +1995,14 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         } else if (fromWhere === 'equip' && fromSlot) {
                             soldItem = player.equip[fromSlot];
                             if (soldItem && soldItem.id === itemId) {
+                                // Check if item is locked
+                                if (soldItem.locked) {
+                                    ws.send(JSON.stringify({
+                                        type: 'error',
+                                        message: 'Cannot sell locked items!'
+                                    }));
+                                    return;
+                                }
                                 player.equip[fromSlot] = null;
                             } else {
                                 soldItem = null;
@@ -1546,7 +2014,28 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                             const itemValue = soldItem.value || 0;
                             player.pyreals = (player.pyreals || 0) + itemValue;
                             
-                            console.log(`Player ${playerName} sold ${soldItem.name} for ${itemValue} pyreals. New total: ${player.pyreals}`);
+                            
+                            // Add item to vendor buyback list (shared across all players)
+                            // Create a copy of the item to avoid reference issues
+                            const buybackItem = JSON.parse(JSON.stringify(soldItem));
+                            buybackItem.buybackId = `buyback-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                            buybackItem.soldBy = playerName;
+                            buybackItem.soldAt = Date.now();
+                            
+                            // Add to front of array (most recent first)
+                            vendorBuyback.unshift(buybackItem);
+                            
+                            // Keep only the last MAX_BUYBACK_ITEMS items
+                            if (vendorBuyback.length > MAX_BUYBACK_ITEMS) {
+                                vendorBuyback.splice(MAX_BUYBACK_ITEMS);
+                            }
+                            
+                            
+                            // Send updated buyback list to the player if they have the shop open
+                            ws.send(JSON.stringify({
+                                type: 'buybackItems',
+                                items: vendorBuyback.slice(0, MAX_BUYBACK_ITEMS)
+                            }));
                             
                             // Send updated inventory/equipment to the player
                             if (fromWhere === 'bag') {
@@ -1555,6 +2044,7 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                     inventory: player.inventory
                                 }));
                             } else if (fromWhere === 'equip') {
+                                ensureTwoHandedEquipConsistency(player.equip);
                                 ws.send(JSON.stringify({
                                     type: 'equipmentUpdated',
                                     equip: player.equip
@@ -1582,43 +2072,238 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                             });
                             
                             // Save player data immediately after any sale (inventory or equipment) to ensure pyreals persist
+                            ensureTwoHandedEquipConsistency(player.equip);
                             savePlayerData(playerName, player);
-                            console.log(`Saved player data after sale - pyreals: ${player.pyreals}`);
+                        }
+                    }
+                    break;
+
+                case 'getBuybackItems':
+                    // Send current buyback items to the player
+                    // Allow this even if player isn't fully logged in yet (for early shop access)
+                    
+                    // Send buyback items regardless of player login status (vendor is shared)
+                    const itemsToSend = vendorBuyback.slice(0, MAX_BUYBACK_ITEMS);
+                    const response = {
+                        type: 'buybackItems',
+                        items: itemsToSend // Send up to 10 items
+                    };
+                    try {
+                        ws.send(JSON.stringify(response));
+                    } catch (error) {
+                        console.error(`[SERVER] [getBuybackItems] Error sending response:`, error);
+                    }
+                    break;
+
+                case 'buybackItem':
+                    // Handle buying back an item from vendor
+                    if (playerId && globalPlayers.has(playerId)) {
+                        const player = globalPlayers.get(playerId);
+                        const { buybackId } = data;
+                        
+                        // Find the item in buyback list
+                        const buybackIndex = vendorBuyback.findIndex(item => item.buybackId === buybackId);
+                        
+                        if (buybackIndex !== -1) {
+                            const buybackItem = vendorBuyback[buybackIndex];
+                            const itemValue = buybackItem.value || 0;
+                            
+                            // Check if player has enough pyreals
+                            if (player.pyreals >= itemValue) {
+                                // Remove pyreals
+                                player.pyreals = (player.pyreals || 0) - itemValue;
+                                
+                                // Find empty inventory slot
+                                let addedToInventory = false;
+                                for (let i = 0; i < player.inventory.length; i++) {
+                                    if (!player.inventory[i]) {
+                                        // Create a copy of the item without buyback metadata
+                                        const purchasedItem = JSON.parse(JSON.stringify(buybackItem));
+                                        delete purchasedItem.buybackId;
+                                        delete purchasedItem.soldBy;
+                                        delete purchasedItem.soldAt;
+                                        
+                                        player.inventory[i] = purchasedItem;
+                                        addedToInventory = true;
+                                        
+                                        // Remove from buyback list
+                                        vendorBuyback.splice(buybackIndex, 1);
+                                        
+                                        
+                                        // Send updated inventory
+                                        ws.send(JSON.stringify({
+                                            type: 'inventoryUpdated',
+                                            inventory: player.inventory
+                                        }));
+                                        
+                                        // Send updated pyreals
+                                        ws.send(JSON.stringify({
+                                            type: 'pyrealsUpdated',
+                                            pyreals: player.pyreals
+                                        }));
+                                        
+                                        // Broadcast player update
+                                        const buybackPlayerLevel = playerLevels.get(playerId) || 'sample_level';
+                                        broadcastToLevel(buybackPlayerLevel, {
+                                            type: 'playerUpdate',
+                                            id: playerId,
+                                            pyreals: player.pyreals
+                                        });
+                                        
+                                        // Save player data
+                                        savePlayerData(playerName, player);
+                                        
+                                        // Send success message
+                                        ws.send(JSON.stringify({
+                                            type: 'buybackSuccess',
+                                            message: `Purchased ${buybackItem.name}`
+                                        }));
+                                        
+                                        break;
+                                    }
+                                }
+                                
+                                if (!addedToInventory) {
+                                    // No empty inventory slot
+                                    ws.send(JSON.stringify({
+                                        type: 'buybackError',
+                                        message: 'Inventory is full'
+                                    }));
+                                }
+                            } else {
+                                // Not enough pyreals
+                                ws.send(JSON.stringify({
+                                    type: 'buybackError',
+                                    message: 'Not enough pyreals'
+                                }));
+                            }
+                        } else {
+                            // Item not found in buyback
+                            ws.send(JSON.stringify({
+                                type: 'buybackError',
+                                message: 'Item no longer available'
+                            }));
+                        }
+                    }
+                    break;
+
+                case 'toggleItemLock':
+                    // Handle toggling item lock status
+                    if (playerId && globalPlayers.has(playerId)) {
+                        const player = globalPlayers.get(playerId);
+                        const { itemId, locked } = data;
+                        
+                        // Find the item in inventory or equipment
+                        let item = null;
+                        let foundInInventory = false;
+                        let foundInEquip = false;
+                        let itemIndex = -1;
+                        let itemSlot = null;
+                        
+                        // Check inventory
+                        if (player.inventory && player.inventory.length > 0) {
+                            for (let i = 0; i < player.inventory.length; i++) {
+                                if (player.inventory[i] && player.inventory[i].id === itemId) {
+                                    item = player.inventory[i];
+                                    foundInInventory = true;
+                                    itemIndex = i;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        // Check equipment if not found in inventory
+                        if (!item && player.equip) {
+                            for (const [slot, equipItem] of Object.entries(player.equip)) {
+                                if (equipItem && equipItem.id === itemId) {
+                                    item = equipItem;
+                                    foundInEquip = true;
+                                    itemSlot = slot;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if (item) {
+                            // Update lock status
+                            item.locked = locked === true;
+                            
+                            // Save player data to persist lock status
+                            savePlayerData(playerName, player);
+                            
+                            // Send updated inventory or equipment back to client
+                            if (foundInInventory) {
+                                ws.send(JSON.stringify({
+                                    type: 'inventoryUpdated',
+                                    inventory: player.inventory
+                                }));
+                            } else if (foundInEquip) {
+                                ws.send(JSON.stringify({
+                                    type: 'equipmentUpdated',
+                                    equip: player.equip
+                                }));
+                            }
+                        } else {
+                            ws.send(JSON.stringify({
+                                type: 'error',
+                                message: 'Item not found!'
+                            }));
                         }
                     }
                     break;
 
                 case 'sellAllInventory':
                     // Handle selling all inventory items to vendor at once
-                    console.log('Received sellAllInventory message:', data);
                     if (playerId && globalPlayers.has(playerId)) {
                         const player = globalPlayers.get(playerId);
                         const { fromWhere } = data;
                         
-                        console.log(`Player ${playerName} selling all inventory items from ${fromWhere}`);
-                        console.log('Player inventory before:', JSON.stringify(player.inventory));
-                        console.log('Player pyreals before:', player.pyreals);
                         
                         let totalValue = 0;
                         let itemsSold = 0;
                         
                         if (fromWhere === 'bag' && player.inventory && player.inventory.length > 0) {
-                            // Sell all inventory items
+                            // Sell all inventory items (excluding locked items)
+                            // Explicitly check for locked === true to handle undefined/false cases
                             player.inventory.forEach((item, idx) => {
                                 if (item && item.value) {
+                                    // Check if item is locked - be very explicit about this
+                                    const isLocked = item.locked === true || item.locked === 'true';
+                                    if (isLocked) {
+                                        return; // Skip this item
+                                    }
+                                    
                                     totalValue += item.value;
                                     itemsSold++;
+                                    
+                                    // Add item to vendor buyback list
+                                    const buybackItem = JSON.parse(JSON.stringify(item));
+                                    buybackItem.buybackId = `buyback-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 9)}`;
+                                    buybackItem.soldBy = playerName;
+                                    buybackItem.soldAt = Date.now();
+                                    
+                                    // Add to front of array (most recent first)
+                                    vendorBuyback.unshift(buybackItem);
+                                    
+                                    // Keep only the last MAX_BUYBACK_ITEMS items
+                                    if (vendorBuyback.length > MAX_BUYBACK_ITEMS) {
+                                        vendorBuyback.splice(MAX_BUYBACK_ITEMS);
+                                    }
+                                    
                                     player.inventory[idx] = null;
-                                    console.log(`Selling item ${idx}: ${item.name} for ${item.value} pyreals`);
                                 }
                             });
                             
                             if (itemsSold > 0) {
+                                
+                                // Send updated buyback list to the player
+                                ws.send(JSON.stringify({
+                                    type: 'buybackItems',
+                                    items: vendorBuyback.slice(0, MAX_BUYBACK_ITEMS)
+                                }));
                                 // Add pyreals to player
                                 player.pyreals = (player.pyreals || 0) + totalValue;
                                 
-                                console.log(`Player ${playerName} sold ${itemsSold} items for ${totalValue} pyreals total. New total: ${player.pyreals}`);
-                                console.log('Player inventory after:', JSON.stringify(player.inventory));
                                 
                                 // Send updated inventory to the player
                                 ws.send(JSON.stringify({
@@ -1641,15 +2326,11 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                 
                                 // Save player data immediately after selling all items to ensure pyreals persist
                                 savePlayerData(playerName, player);
-                                console.log(`Saved player data after selling all items - pyreals: ${player.pyreals}`);
                             } else {
-                                console.log('No items were sold - inventory was empty or had no valuable items');
                             }
                         } else {
-                            console.log('Invalid fromWhere or empty inventory:', fromWhere, player.inventory);
                         }
                     } else {
-                        console.log('Player not found or invalid playerId:', playerId, gameState.players.has(playerId));
                     }
                     break;
 
@@ -1657,7 +2338,6 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                     // Handle player death notification
                     if (playerId && gameState.players.has(playerId)) {
                         const player = gameState.players.get(playerId);
-                        console.log(`Player ${playerName} has died`);
                         
                         // Update player state to indicate death
                         player.isDead = true;
@@ -1675,9 +2355,9 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                 vx: (Math.random() - 0.5) * 100,
                                 vy: -Math.random() * 100 - 200,
                                 pickRadius: 40,
-                                grounded: false,
-                                noPickupUntil: Date.now() + 3000 // 3 seconds delay to prevent immediate pickup after death
+                                grounded: false
                             };
+                            applyPickupDelay(drop);
                             
                             gameState.worldDrops.push(drop);
                             
@@ -1687,7 +2367,6 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                 ...drop
                             });
                             
-                            console.log(`Player ${playerName} dropped ${droppedItem.name} due to death`);
                         }
                         
                         // Broadcast death to all other players
@@ -1705,7 +2384,6 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         const player = gameState.players.get(playerId);
                         const { x, y, health, maxHealth } = data;
                         
-                        console.log(`Player ${playerName} has respawned at (${x}, ${y})`);
                         
                         // Update player state
                         player.isDead = false;
@@ -1735,7 +2413,6 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         const player = gameState.players.get(playerId);
                         const { amount, dropId } = data;
                         
-                        console.log(`Player ${playerName} picked up ${amount} pyreals from drop ${dropId}`);
                         
                         // Remove the currency drop from world drops
                         const dropIndex = gameState.worldDrops.findIndex(d => d.id === dropId);
@@ -1769,7 +2446,6 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                             pyreals: player.pyreals
                         });
                         
-                        console.log(`Player ${playerName} now has ${player.pyreals} pyreals`);
                     }
                     break;
 
@@ -1778,15 +2454,26 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         const player = globalPlayers.get(playerId);
                         const playerLevel = playerLevels.get(playerId) || 'sample_level';
                         const levelState = getLevelGameState(playerLevel);
+                        
+                        // Safety check: ensure levelState exists
+                        if (!levelState) {
+                            console.error(`Failed to get level state for level: ${playerLevel}`);
+                            break;
+                        }
+                        
                         const weaponType = data.weaponType;
                         const direction = data.direction; // 'left' or 'right'
                         const playerX = player.x;
                         const playerY = player.y;
                         
+                        // Debug logging for Crossbow
+                        if (weaponType === 'Crossbow') {
+                        }
+                        
                         let projectile = null;
                         
-                        if (weaponType === 'Bow') {
-                            // Create arrow projectile
+                        if (weaponType === 'Bow' || weaponType === 'Crossbow') {
+                            // Create arrow projectile (both Bow and Crossbow shoot arrows)
                             const startX = playerX + (direction === 'right' ? 32 : -8);
                             const startY = playerY + 16;
                             projectile = {
@@ -1804,7 +2491,39 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                 createdAt: Date.now(),
                                 lifeTime: 5000 // 5 seconds max life
                             };
+                            
+                            // Debug logging for Crossbow projectile creation
+                            if (weaponType === 'Crossbow') {
+                            }
                         } else if (weaponType === 'Wand') {
+                            // Check mana before casting
+                            const MANA_COST = 5;
+                            const currentMana = player.mana || 0;
+                            const maxMana = player.maxMana || player.stats?.Mana || 50;
+                            
+                            // Initialize mana if not set
+                            if (player.mana === undefined) {
+                                player.mana = maxMana;
+                            }
+                            
+                            // Check if player has enough mana
+                            if (currentMana < MANA_COST) {
+                                // Not enough mana, send error message to player
+                                ws.send(JSON.stringify({
+                                    type: 'insufficientMana',
+                                    message: 'Not enough mana to cast spell!',
+                                    currentMana: currentMana,
+                                    requiredMana: MANA_COST
+                                }));
+                                break;
+                            }
+                            
+                            // Deduct mana
+                            player.mana = Math.max(0, currentMana - MANA_COST);
+                            
+                            // Set mana lock time (regeneration starts 1.5 seconds after casting)
+                            player.manaLockUntil = Date.now() + 1500;
+                            
                             // Create fireball projectile
                             const startX = playerX + (direction === 'right' ? 32 : -8);
                             const startY = playerY + 16;
@@ -1823,6 +2542,14 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                 createdAt: Date.now(),
                                 lifeTime: 4000 // 4 seconds max life
                             };
+                            
+                            // Broadcast mana update to player
+                            ws.send(JSON.stringify({
+                                type: 'manaUpdated',
+                                mana: player.mana,
+                                maxMana: maxMana
+                            }));
+                            
                         }
                         
                         if (projectile) {
@@ -1830,11 +2557,17 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                             if (!levelState.projectiles) levelState.projectiles = [];
                             levelState.projectiles.push(projectile);
                             
+                            // Debug logging for Crossbow
+                            if (projectile.weaponType === 'Crossbow') {
+                            }
+                            
                             // Broadcast projectile creation to players in this level only
                             broadcastToLevel(playerLevel, {
                                 type: 'projectileCreated',
                                 ...projectile
                             });
+                        } else if (weaponType === 'Crossbow') {
+                            console.error('Crossbow projectile was not created! Check weaponType:', weaponType);
                         }
                     }
                     break;
@@ -1845,7 +2578,6 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                         const player = gameState.players.get(playerId);
                         // Only allow certain players to load levels (you can add admin check here)
                         if (data.levelName) {
-                            console.log(`Loading level: ${data.levelName} requested by ${playerName}`);
                             const newLevel = levelLoader.loadLevel(data.levelName);
                             if (newLevel) {
                                 // Apply new level to game state
@@ -1874,7 +2606,6 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                                     levelData: levelLoader.getLevelInfo()
                                 });
                                 
-                                console.log(`Level changed to: ${newLevel.name}`);
                             } else {
                                 ws.send(JSON.stringify({
                                     type: 'error',
@@ -1886,23 +2617,38 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
                     break;
 
                 default:
-                    console.log('Unknown message type:', data.type, 'from', playerName);
+                    // Log unknown message types - this will help us see if getBuybackItems is being received but not matched
+                    if (data.type === 'getBuybackItems' || (data.type && data.type.toLowerCase && data.type.toLowerCase().includes('buyback'))) {
+                        console.error(`[SERVER] ERROR: getBuybackItems message reached default case! This should not happen!`);
+                        console.error(`[SERVER] Message type: "${data.type}" (length: ${data.type ? data.type.length : 0})`);
+                        console.error(`[SERVER] Full message:`, JSON.stringify(data));
+                        // Try to handle it anyway
+                        const itemsToSend = vendorBuyback.slice(0, MAX_BUYBACK_ITEMS);
+                        ws.send(JSON.stringify({
+                            type: 'buybackItems',
+                            items: itemsToSend
+                        }));
+                    } else {
+                    }
             }
         } catch (error) {
             console.error('Error parsing message from', playerName, ':', error);
             console.error('Raw message:', message.toString());
+            // If it's a getBuybackItems message that failed to parse, log it specially
+            if (message.toString().includes('getBuybackItems') || message.toString().includes('buyback')) {
+                console.error('[SERVER] ERROR: Failed to parse what looks like a buyback message!');
+                console.error('[SERVER] Raw message:', message.toString());
+            }
         }
     });
 
     ws.on('close', (code, reason) => {
-        console.log(`${playerName} disconnected`);
         
         if (playerId && globalPlayers.has(playerId)) {
             // Store player data before removing them - get the latest position from globalPlayers
             const playerData = globalPlayers.get(playerId);
             
             // Ensure we have the latest position data before saving
-            console.log(`Saving player ${playerName} position: x=${playerData.x}, y=${playerData.y}`);
             
             // Save player data to persistent storage (includes x, y position)
             savePlayerData(playerName, playerData);
@@ -1918,12 +2664,10 @@ function handleWebSocketConnection(ws, req, isSecure = false) {
             globalPlayers.delete(playerId);
             gameState.players.delete(playerId);
             playerLevels.delete(playerId);
-            console.log(`${playerName} data saved to persistent storage with position (${playerData.x}, ${playerData.y})`);
             
             // If this was the last player, clear world drops to prevent accumulation
             const totalClients = httpWss.clients.size + (httpsWss ? httpsWss.clients.size : 0);
             if (totalClients === 0 && gameState.worldDrops.length > 0) {
-                console.log('Last player disconnected, clearing all world drops to prevent accumulation');
                 gameState.worldDrops.length = 0;
             }
         }
@@ -1982,8 +2726,15 @@ setInterval(() => {
         for (let i = levelState.projectiles.length - 1; i >= 0; i--) {
             const projectile = levelState.projectiles[i];
             
-            // Check if projectile has expired
-            if (now - projectile.createdAt > projectile.lifeTime) {
+            // Safety check: ensure projectile has required properties
+            if (!projectile || !projectile.id) {
+                levelState.projectiles.splice(i, 1);
+                continue;
+            }
+            
+            // Check if projectile has expired (with safety check)
+            if (projectile.createdAt && projectile.lifeTime && 
+                (now - projectile.createdAt > projectile.lifeTime)) {
                 levelState.projectiles.splice(i, 1);
                 // Broadcast destruction to players
                 broadcastToLevel(levelName, {
@@ -1993,6 +2744,23 @@ setInterval(() => {
                 continue;
             }
             
+            // Ensure projectile has position and velocity properties
+            if (typeof projectile.x !== 'number' || typeof projectile.y !== 'number' ||
+                typeof projectile.vx !== 'number' || typeof projectile.vy !== 'number') {
+                console.warn('Invalid projectile data, removing:', projectile.id);
+                levelState.projectiles.splice(i, 1);
+                continue;
+            }
+            
+            // Store previous position for swept collision detection
+            projectile.prevX = projectile.x;
+            projectile.prevY = projectile.y;
+            
+            // Use sub-stepping for fast projectiles to prevent passing through enemies
+            // Calculate how far the projectile will move this frame (before applying physics)
+            const currentVx = projectile.vx;
+            const currentVy = projectile.vy;
+            
             // Apply physics
             if (projectile.type === 'arrow') {
                 // Arrow has parabolic arc (gravity)
@@ -2000,13 +2768,79 @@ setInterval(() => {
             }
             // Fireball goes straight (no gravity)
             
-            // Store previous position for swept collision detection
-            projectile.prevX = projectile.x;
-            projectile.prevY = projectile.y;
+            // Calculate move distance after physics
+            const moveDistance = Math.hypot(projectile.vx * dt, projectile.vy * dt);
+            const maxStepSize = 8; // Maximum pixels to move per collision check (reduced for better detection)
             
-            // Update position
-            projectile.x += projectile.vx * dt;
-            projectile.y += projectile.vy * dt;
+            if (moveDistance > maxStepSize) {
+                // Fast projectile - use sub-stepping with collision checks
+                const numSteps = Math.ceil(moveDistance / maxStepSize);
+                const stepDt = dt / numSteps;
+                
+                // Store initial velocity before physics
+                const initialVy = currentVy;
+                
+                // Reset velocity for sub-stepping (will apply physics per step)
+                projectile.vx = currentVx;
+                projectile.vy = initialVy;
+                
+                let stepPrevX = projectile.x;
+                let stepPrevY = projectile.y;
+                
+                for (let step = 0; step < numSteps; step++) {
+                    // Apply physics for this sub-step
+                    if (projectile.type === 'arrow') {
+                        projectile.vy += 800 * stepDt; // gravity per step
+                    }
+                    
+                    // Update position for this sub-step
+                    projectile.x += projectile.vx * stepDt;
+                    projectile.y += projectile.vy * stepDt;
+                    
+                    // Check collision during sub-stepping (inline collision check)
+                    if (!projectile.isEnemyProjectile && levelState.enemies) {
+                        for (const enemy of levelState.enemies) {
+                            if (!enemy || enemy.dead) continue;
+                            if (typeof enemy.x !== 'number' || typeof enemy.y !== 'number') continue;
+                            
+                            const enemyW = enemy.w || 48;
+                            const enemyH = enemy.h || 64;
+                            const projectileRadius = 4;
+                            const expandedLeft = enemy.x - projectileRadius;
+                            const expandedRight = enemy.x + enemyW + projectileRadius;
+                            const expandedTop = enemy.y - projectileRadius;
+                            const expandedBottom = enemy.y + enemyH + projectileRadius;
+                            
+                            // Check if projectile intersects enemy bounding box at this sub-step
+                            if (projectile.x >= expandedLeft && projectile.x <= expandedRight &&
+                                projectile.y >= expandedTop && projectile.y <= expandedBottom) {
+                                // Hit detected - mark projectile for removal and damage enemy
+                                projectile.hitEnemy = enemy.id;
+                                projectile.hitDamage = projectile.damage || 10;
+                                break;
+                            }
+                            // Also check previous position in this sub-step
+                            else if (stepPrevX >= expandedLeft && stepPrevX <= expandedRight &&
+                                     stepPrevY >= expandedTop && stepPrevY <= expandedBottom) {
+                                projectile.hitEnemy = enemy.id;
+                                projectile.hitDamage = projectile.damage || 10;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Update step previous position for next iteration
+                    stepPrevX = projectile.x;
+                    stepPrevY = projectile.y;
+                    
+                    // If hit detected, stop sub-stepping
+                    if (projectile.hitEnemy) break;
+                }
+            } else {
+                // Slow projectile - normal update
+                projectile.x += projectile.vx * dt;
+                projectile.y += projectile.vy * dt;
+            }
             
             // Remove projectiles that go off-screen (beyond reasonable bounds)
             // Check if projectile is way off-screen to the left, right, or below
@@ -2030,16 +2864,28 @@ setInterval(() => {
         }
         
         // Broadcast projectile updates to players in this level only
-        if (levelState.projectiles.length > 0) {
+        if (levelState.projectiles && levelState.projectiles.length > 0) {
             for (const projectile of levelState.projectiles) {
-                broadcastToLevel(levelName, {
-                    type: 'projectileUpdate',
-                    id: projectile.id,
-                    x: projectile.x,
-                    y: projectile.y,
-                    vx: projectile.vx,
-                    vy: projectile.vy
-                });
+                // Safety check: ensure projectile has all required properties before broadcasting
+                if (!projectile || !projectile.id || 
+                    typeof projectile.x !== 'number' || typeof projectile.y !== 'number' ||
+                    typeof projectile.vx !== 'number' || typeof projectile.vy !== 'number') {
+                    console.warn('Skipping invalid projectile in broadcast:', projectile);
+                    continue;
+                }
+                
+                try {
+                    broadcastToLevel(levelName, {
+                        type: 'projectileUpdate',
+                        id: projectile.id,
+                        x: projectile.x,
+                        y: projectile.y,
+                        vx: projectile.vx,
+                        vy: projectile.vy
+                    });
+                } catch (error) {
+                    console.error('Error broadcasting projectile update:', error, projectile);
+                }
             }
         }
     }
@@ -2063,7 +2909,6 @@ const positionSaveInterval = setInterval(() => {
                 playerData.pyreals = 0;
             }
             savePlayerData(playerData.name, playerData);
-            console.log(`Periodic save: ${playerData.name} - Pyreals: ${playerData.pyreals}, Inventory slots: ${(playerData.inventory || []).filter(i => i !== null).length}`);
         }
     
     // Note: Player data is now stored persistently in files, no cleanup needed
@@ -2074,14 +2919,12 @@ const positionSaveInterval = setInterval(() => {
         const drop = gameState.worldDrops[i];
         if (drop.noPickupUntil && (now - drop.noPickupUntil) > worldDropCleanupTime) {
             gameState.worldDrops.splice(i, 1);
-            console.log(`Cleaned up old world drop: ${drop.item?.name || 'unknown'}`);
         }
     }
     
     // If no players are connected, clear all world drops to prevent accumulation
     const totalClients = httpWss.clients.size + (httpsWss ? httpsWss.clients.size : 0);
     if (totalClients === 0 && gameState.worldDrops.length > 0) {
-        console.log('No players connected, clearing all world drops to prevent accumulation');
         gameState.worldDrops.length = 0;
     }
 }, 5000);
@@ -2103,11 +2946,88 @@ if (httpsWss) {
 
 // Level-based game loop - processes each level separately
 let lastEnemyTick = Date.now();
+let enemyUpdateFrameCounter = 0; // Throttle enemy position updates to 20fps (every 3 frames)
 const gameLoopInterval = setInterval(() => {
     const now = Date.now();
     const dt = Math.min(0.016, (now - lastEnemyTick) / 1000);
     lastEnemyTick = now;
+    enemyUpdateFrameCounter++;
 
+    // Process mana regeneration for all players
+    for (const [playerId, player] of globalPlayers) {
+        if (!player || player.isDead) continue;
+        
+        // Initialize mana if not set
+        if (player.mana === undefined) {
+            player.mana = player.maxMana || 50;
+        }
+        if (player.maxMana === undefined) {
+            // Recalculate maxMana from equipment if needed
+            const baseMana = 50;
+            let totalMana = baseMana;
+            if (player.equip) {
+                Object.keys(player.equip).forEach(slot => {
+                    const item = player.equip[slot];
+                    if (item && item.stats && item.stats.Mana) {
+                        totalMana += item.stats.Mana;
+                    }
+                });
+            }
+            player.maxMana = Math.max(1, totalMana);
+            if (player.mana > player.maxMana) {
+                player.mana = player.maxMana;
+            }
+        }
+        
+        // Initialize stats if not set
+        if (!player.stats) {
+            const baseFocus = 5;
+            let totalFocus = baseFocus;
+            if (player.equip) {
+                Object.keys(player.equip).forEach(slot => {
+                    const item = player.equip[slot];
+                    if (item && item.stats && item.stats.Focus) {
+                        totalFocus += item.stats.Focus;
+                    }
+                });
+            }
+            player.stats = { Focus: totalFocus };
+        }
+        
+        // Check if mana regeneration is locked
+        const manaRegenLocked = player.manaLockUntil && (now < player.manaLockUntil);
+        
+        // Regenerate mana if not locked and not at max
+        if (!manaRegenLocked && player.mana < player.maxMana) {
+            // Base regeneration rate: 2 mana per second
+            const baseRegenRate = 2;
+            // Focus attribute augments regeneration: +0.1 mana/second per Focus point
+            const focusBonus = (player.stats.Focus || 5) * 0.1;
+            const regenRate = baseRegenRate + focusBonus;
+            
+            // Regenerate mana (dt is in seconds, so multiply by dt)
+            const oldMana = player.mana;
+            player.mana = Math.min(player.maxMana, player.mana + regenRate * dt);
+            
+            // Broadcast mana update if mana changed significantly (to avoid spam, only send when crossing integer thresholds)
+            if (Math.floor(oldMana) !== Math.floor(player.mana)) {
+                // Find the WebSocket for this player to send update
+                const httpClients = Array.from(httpWss.clients);
+                const httpsClients = httpsWss ? Array.from(httpsWss.clients) : [];
+                const allClients = [...httpClients, ...httpsClients];
+                const clientWs = allClients.find(ws => ws.playerId === playerId);
+                
+                if (clientWs && clientWs.readyState === WebSocket.OPEN) {
+                    clientWs.send(JSON.stringify({
+                        type: 'manaUpdated',
+                        mana: player.mana,
+                        maxMana: player.maxMana
+                    }));
+                }
+            }
+        }
+    }
+    
     // Process each level separately
     for (const [levelName, levelState] of levelGameStates) {
         // Only process levels that have players
@@ -2117,35 +3037,174 @@ const gameLoopInterval = setInterval(() => {
         // Handle enemy AI for this level
         for (let i = levelState.enemies.length - 1; i >= 0; i--) {
             const enemy = levelState.enemies[i];
+            // Skip dead enemies, but keep Water Wisp and Fire Wisp in list until death animation completes
+            let isDeadWispAnimating = false;
             if (enemy.dead) {
-                levelState.enemies.splice(i, 1);
-                continue;
+                // For Water Wisp and Fire Wisp, check if death animation is complete before removing
+                if ((enemy.type === 'waterwisp' || enemy.type === 'firewisp' || enemy.type === 'earthwisp' || enemy.type === 'windwisp') && enemy.dieAnimProgress !== undefined) {
+                    if (enemy.dieAnimProgress < 1.1) {
+                        // Death animation still playing, keep in list but skip normal updates
+                        isDeadWispAnimating = true;
+                    } else {
+                        // Wisp death animation complete - finalizeEnemyDeath should have been called
+                        // But if it wasn't (safety check), call it now and remove the enemy
+                        if (levelState.enemies.findIndex(e => e && e.id === enemy.id) !== -1 && !enemy._finalized) {
+                            finalizeEnemyDeath(levelName, levelState, enemy);
+                        }
+                        // Remove from list (finalizeEnemyDeath already did this, but ensure it's gone)
+                        const enemyIndex = levelState.enemies.findIndex(e => e && e.id === enemy.id);
+                        if (enemyIndex !== -1) {
+                            levelState.enemies.splice(enemyIndex, 1);
+                        }
+                        i--; // Adjust index after removal
+                        continue;
+                    }
+                } else if (enemy.type !== 'waterwisp' && enemy.type !== 'firewisp' && enemy.type !== 'earthwisp' && enemy.type !== 'windwisp') {
+                    // Non-wisp enemies are removed immediately
+                    levelState.enemies.splice(i, 1);
+                    i--; // Adjust index after removal
+                    continue;
+                } else {
+                    // Wisp with undefined dieAnimProgress - shouldn't happen, but handle it
+                    levelState.enemies.splice(i, 1);
+                    i--; // Adjust index after removal
+                    continue;
+                }
             }
 
-            // Find nearest player in this level
+            // Skip normal AI updates for dead Wisp that's still animating
+            if (isDeadWispAnimating) {
+                // Dead Wisp is still animating - only update death animation progress
+                // Update death animation progress for Water Wisp and Fire Wisp (server-authoritative)
+                if (enemy.dead && enemy.dieAnimProgress !== undefined) {
+                    const previousProgress = enemy.dieAnimProgress;
+                    enemy.dieAnimProgress += dt;
+                    // Check if death animation has completed (7 frames * 0.15s = 1.05 seconds)
+                    // Add small buffer to ensure all frames are shown (1.1 seconds = 1.05 + buffer)
+                    // Only finalize once when crossing the threshold
+                    if (previousProgress < 1.1 && enemy.dieAnimProgress >= 1.1) {
+                        // Death animation complete, now finalize death immediately
+                        // Make sure enemy is still in the list before finalizing
+                        const enemyStillInList = levelState.enemies.findIndex(e => e && e.id === enemy.id) !== -1;
+                        if (enemyStillInList) {
+                            // Immediately remove from list, spawn loot, and broadcast death
+                            // Do this synchronously to avoid any delays
+                            finalizeEnemyDeath(levelName, levelState, enemy);
+                            // Mark that we've finalized so the main loop doesn't try again
+                            enemy._finalized = true;
+                        }
+                    }
+                } else if (enemy.dead && (enemy.type === 'waterwisp' || enemy.type === 'firewisp' || enemy.type === 'earthwisp' || enemy.type === 'windwisp') && enemy.dieAnimProgress === undefined) {
+                    // Initialize death animation progress if not set
+                    enemy.dieAnimProgress = 0;
+                }
+                
+                // Broadcast position update for death animation visibility
+                const positionUpdate = {
+                    type: 'enemyUpdate',
+                    id: enemy.id,
+                    x: enemy.x,
+                    y: enemy.y,
+                    health: enemy.health,
+                    maxHealth: enemy.maxHealth,
+                    level: enemy.level,
+                    enemyType: enemy.type,
+                    dead: enemy.dead,
+                    name: enemy.name,
+                    dieAnimProgress: enemy.dieAnimProgress
+                };
+                broadcastToLevel(levelName, positionUpdate);
+            } else {
+                // Find nearest player in this level
             let nearest = null;
             let nearestDistance = Infinity;
+            let nearestHorizontalDistance = Infinity;
             for (const player of playersInLevel) {
                 const dx = player.x - enemy.x;
                 const dy = player.y - enemy.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
+                const horizontalDistance = Math.abs(dx); // Horizontal distance only
                 if (distance < nearestDistance) {
                     nearest = player;
                     nearestDistance = distance;
+                    nearestHorizontalDistance = horizontalDistance;
                 }
             }
 
             const inRange = nearest && nearestDistance < (enemy.visibilityRange || 400);
             
-            // Enemy movement AI
-            const targetX = inRange ? (nearest.x || enemy.homeX || enemy.x) : (enemy.homeX || enemy.x);
-            const speedBase = 120;
-            const speed = speedBase + (enemy.level || 1) * 6;
+            // Determine attack range based on enemy type
+            let attackRange = 80; // Default melee range
+            if (enemy.type === 'spellcaster') {
+                attackRange = 200; // Spellcasters stop at minimum spell range
+            } else if (enemy.type === 'waterwisp' || enemy.type === 'firewisp' || enemy.type === 'earthwisp' || enemy.type === 'windwisp') {
+                attackRange = enemy.attackRange || 100; // Wisp attack range (slightly larger than stop distance)
+            }
             
-            if (enemy.x < targetX) {
-                enemy.x += speed * dt;
-            } else if (enemy.x > targetX) {
-                enemy.x -= speed * dt;
+            // Calculate minimum distance to prevent model intersection
+            // Characters are 48 pixels wide, so we need at least 48 pixels center-to-center horizontally
+            // Plus a buffer for visual separation (30 pixels)
+            const characterWidth = 48;
+            const visualBuffer = 30;
+            const minHorizontalDistanceForNoIntersection = characterWidth + visualBuffer; // 78 pixels minimum
+            
+            // Stop distance should be the larger of: attack range or minimum distance for no intersection
+            // Use horizontal distance for stop check to prevent model intersection
+            // Add a small buffer to prevent oscillation at the boundary
+            // Wisp should get closer before stopping (slightly less than attack range)
+            let stopHorizontalDistance;
+            if (enemy.type === 'waterwisp' || enemy.type === 'firewisp' || enemy.type === 'earthwisp' || enemy.type === 'windwisp') {
+                // Wisp stops slightly before attack range (95 pixels) so it can attack when stopped
+                stopHorizontalDistance = Math.max(95, minHorizontalDistanceForNoIntersection) + 5; // ~100 pixels, but attack range is 100 so it can attack
+            } else {
+                stopHorizontalDistance = Math.max(attackRange, minHorizontalDistanceForNoIntersection) + 5; // At least 83 pixels for melee (reduced from 88)
+            }
+            
+            // Enemy movement AI - use stored speed (calculated with randomization and equipment)
+            // Stop moving if within stop distance (use horizontal distance to prevent model intersection)
+            const shouldMove = inRange && nearestHorizontalDistance > stopHorizontalDistance;
+            
+            // Use stored speed, or recalculate if missing (for backwards compatibility)
+            let speed = enemy.speed;
+            if (!speed) {
+                speed = calculateEnemySpeed(enemy.level || 1, enemy.equip);
+                enemy.speed = speed;
+            }
+            
+            // Update vx for rendering and movement
+            if (shouldMove && nearest) {
+                // Only move if we should move (not within stop distance)
+                // Calculate direction toward player
+                const dx = (nearest.x || 0) - (enemy.x || 0);
+                const dy = (nearest.y || 0) - (enemy.y || 0);
+                
+                // Normalize direction and move toward player
+                if (Math.abs(dx) > 0.1) { // Only move if there's significant horizontal distance
+                    if (dx > 0) {
+                        enemy.x += speed * dt;
+                        enemy.vx = speed;
+                        enemy.facing = 'right';
+                    } else {
+                        enemy.x -= speed * dt;
+                        enemy.vx = -speed;
+                        enemy.facing = 'left';
+                    }
+                } else {
+                    // Very close horizontally, stop moving
+                    enemy.vx = 0;
+                    enemy.facing = dx > 0 ? 'right' : 'left';
+                }
+            } else {
+                // Stop moving - we're within stop distance or not in range at all
+                enemy.vx = 0;
+                // Update facing direction toward target if in range
+                if (inRange && nearest) {
+                    const dx = (nearest.x || 0) - (enemy.x || 0);
+                    enemy.facing = dx > 0 ? 'right' : 'left';
+                } else {
+                    // Keep last facing direction when stationary
+                    if (!enemy.facing) enemy.facing = 'right';
+                }
             }
 
             // Apply gravity and floor collision
@@ -2180,42 +3239,316 @@ const gameLoopInterval = setInterval(() => {
                 }
             }
 
+            // Update attack animation timer
+            if (enemy.attackAnimTime !== undefined && enemy.attackAnimTime > 0) {
+                // Store previous value for frame detection
+                if (enemy.type === 'waterwisp' || enemy.type === 'firewisp' || enemy.type === 'earthwisp' || enemy.type === 'windwisp') {
+                    enemy._lastAttackAnimTime = enemy.attackAnimTime;
+                }
+                enemy.attackAnimTime = Math.max(0, enemy.attackAnimTime - dt);
+                
+                // Wisp: Apply damage at frame 06 of attack animation (wisp-attack-06.png)
+                // Attack animation is 0.5 seconds with 10 frames (0.05s per frame)
+                // Frame 06 (index 6) is at progress 0.6, which means attackAnimTime = 0.5 * (1 - 0.6) = 0.2 seconds remaining
+                // Check when we cross the 0.2 threshold (frame 06)
+                const wasAboveFrame06 = (enemy._lastAttackAnimTime !== undefined && enemy._lastAttackAnimTime > 0.2);
+                const isAtOrBelowFrame06 = enemy.attackAnimTime <= 0.2;
+                if ((enemy.type === 'waterwisp' || enemy.type === 'firewisp' || enemy.type === 'earthwisp' || enemy.type === 'windwisp') && wasAboveFrame06 && isAtOrBelowFrame06 && enemy._pendingAttackDamage !== null && enemy._pendingAttackTarget && !enemy._attackDamageApplied) {
+                    const p = enemy._pendingAttackTarget;
+                    const dmg = enemy._pendingAttackDamage;
+                    
+                    // Apply damage
+                    p.health = Math.max(0, (p.health || p.maxHealth || 100) - dmg);
+                    
+                    // Check if player died
+                    if (p.health <= 0) {
+                        p.isDead = true;
+                        p.health = 0;
+                        
+                        // Drop the most valuable item from inventory/equipment
+                        const droppedItem = dropMostValuableItem(p);
+                        if (droppedItem) {
+                            const drop = {
+                                id: `enemy-death-drop-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                                x: p.x + 24,
+                                y: p.y + 32,
+                                item: droppedItem,
+                                vx: (Math.random() - 0.5) * 100,
+                                vy: -Math.random() * 100 - 200,
+                                pickRadius: 40,
+                                grounded: false
+                            };
+                            applyPickupDelay(drop);
+                            levelState.worldDrops.push(drop);
+                            broadcastToLevel(levelName, { type: 'dropItem', ...drop });
+                        }
+                        
+                        // Generate and broadcast death message
+                        const weaponName = 'Water';
+                        const deathMessage = generateDeathMessage(p.name, enemy.name, weaponName);
+                        broadcastToLevel(levelName, {
+                            type: 'chatMessage',
+                            message: deathMessage,
+                            color: '#ffa500'
+                        });
+                        
+                        broadcastToLevel(levelName, {
+                            type: 'playerDeath',
+                            playerId: p.id,
+                            playerName: p.name
+                        });
+                    }
+                    
+                    // Notify all clients with playerHit message (causes flash effect)
+                    broadcastToLevel(levelName, { 
+                        type: 'playerHit', 
+                        id: p.id, 
+                        health: p.health, 
+                        byEnemyId: enemy.id, 
+                        damage: dmg 
+                    });
+                    broadcastToLevel(levelName, { 
+                        type: 'playerUpdate', 
+                        id: p.id, 
+                        x: p.x, 
+                        y: p.y, 
+                        health: p.health, 
+                        maxHealth: p.maxHealth, 
+                        pyreals: p.pyreals 
+                    });
+                    
+                    // Mark damage as applied and clear pending attack
+                    enemy._attackDamageApplied = true;
+                    enemy._pendingAttackDamage = null;
+                    enemy._pendingAttackTarget = null;
+                    enemy._lastAttackAnimTime = undefined;
+                }
+                
+                // Reset damage applied flag when attack animation completes
+                if (enemy.attackAnimTime <= 0 && enemy._attackDamageApplied) {
+                    enemy._attackDamageApplied = false;
+                    if (enemy.type === 'waterwisp' || enemy.type === 'firewisp' || enemy.type === 'earthwisp' || enemy.type === 'windwisp') {
+                        enemy._lastAttackAnimTime = undefined;
+                    }
+                }
+            } else if (enemy.attackAnimTime === undefined) {
+                enemy.attackAnimTime = 0;
+            }
+            
+            // Update hurt animation timer for Water Wisp and Fire Wisp
+            if (enemy.type === 'waterwisp' || enemy.type === 'firewisp' || enemy.type === 'earthwisp' || enemy.type === 'windwisp') {
+                if (enemy.hurtAnimTime !== undefined && enemy.hurtAnimTime > 0) {
+                    enemy.hurtAnimTime = Math.max(0, enemy.hurtAnimTime - dt);
+                } else if (enemy.hurtAnimTime === undefined) {
+                    enemy.hurtAnimTime = 0;
+                }
+                
+                // Note: Death animation progress for dead Wisp is handled in the isDeadWispAnimating block above
+                // This section only handles initialization if needed (shouldn't happen, but safety check)
+                if (enemy.dead && (enemy.type === 'waterwisp' || enemy.type === 'firewisp') && enemy.dieAnimProgress === undefined && !isDeadWispAnimating) {
+                    // Initialize death animation progress if not set
+                    enemy.dieAnimProgress = 0;
+                }
+            }
+            
             // Attack if close enough and cooldown elapsed
             enemy.attackCooldown = Math.max(0, (enemy.attackCooldown || 0) - dt);
-            if (inRange && enemy.attackCooldown === 0) {
-                // Perform attack (e.g., spawn projectile)
-                const direction = (nearest.x || 0) > (enemy.x || 0) ? 'right' : 'left';
-                const projectile = {
-                    id: `enemy-fireball-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                    type: 'fireball',
-                    x: enemy.x + (direction === 'right' ? 32 : -8),
-                    y: enemy.y + 16,
-                    vx: direction === 'right' ? 600 : -600, // Slightly slower than player fireballs
-                    vy: 0,
-                    damage: 15 + (enemy.level || 1) * 3, // Higher damage than player fireballs
-                    playerId: enemy.id, // Use enemy ID to identify enemy projectiles
-                    isEnemyProjectile: true,
-                    createdAt: Date.now(),
-                    lifeTime: 4000 // 4 seconds max life
-                };
-                levelState.projectiles = levelState.projectiles || [];
-                levelState.projectiles.push(projectile);
-                broadcastToLevel(levelName, { type: 'projectileCreated', ...projectile });
-                enemy.attackCooldown = 2; // 2 second cooldown
+            // Only allow attack if cooldown is exactly 0 (not negative) to prevent spam
+            // Also check that attack animation is not currently playing
+            if (inRange && enemy.attackCooldown === 0 && (enemy.attackAnimTime === undefined || enemy.attackAnimTime <= 0) && nearest) {
+                const dx = (nearest.x || 0) - (enemy.x || 0);
+                const dy = (nearest.y || 0) - (enemy.y || 0);
+                const dist = Math.hypot(dx, dy);
+                
+                // Update facing direction based on target
+                enemy.facing = dx > 0 ? 'right' : 'left';
+                
+                // Wisp attack logic - damage applied at end of animation
+                if ((enemy.type === 'waterwisp' || enemy.type === 'firewisp' || enemy.type === 'earthwisp' || enemy.type === 'windwisp') && dist <= attackRange) {
+                    const p = getPlayersInLevel(levelName).find(p => p.id === nearest.id);
+                    if (p && !p.isDead) {
+                        // Calculate damage (level is already factored in calculateEnemyDamage)
+                        const dmg = calculateEnemyDamage(enemy.level || 1, enemy.type, enemy.equip);
+                        
+                        // Store pending damage and target to apply at end of animation
+                        enemy._pendingAttackDamage = dmg;
+                        enemy._pendingAttackTarget = p;
+                        enemy._attackDamageApplied = false;
+                        
+                        // Start attack animation (0.5 seconds for full attack animation)
+                        enemy.attackAnimTime = 0.5;
+                        
+                        // Set attack cooldown
+                        enemy.attackCooldown = 1.5; // 1.5 second cooldown between attacks
+                        
+                        // Broadcast enemy attack animation
+                        broadcastToLevel(levelName, {
+                            type: 'enemyUpdate',
+                            id: enemy.id,
+                            x: enemy.x,
+                            y: enemy.y,
+                            health: enemy.health,
+                            maxHealth: enemy.maxHealth,
+                            attackAnimTime: enemy.attackAnimTime,
+                            facing: enemy.facing
+                        });
+                        // Note: Damage will be applied at the end of animation in the update loop above
+                    }
+                }
+                // Only spellcasters shoot projectiles
+                else if (enemy.type === 'spellcaster') {
+                    // Cast spell if player is within spell range (200-400 pixels)
+                    if (dist >= 200 && dist <= 400) {
+                        const p = getPlayersInLevel(levelName).find(p => p.id === nearest.id);
+                        if (p) {
+                            // Start attack animation for spellcasters too
+                            enemy.attackAnimTime = 0.25; // Same duration as player attacks
+                            
+                            // Calculate damage from equipment
+                            const damage = calculateEnemyDamage(enemy.level || 1, enemy.type, enemy.equip);
+                            
+                            // Create enemy fireball projectile
+                            const direction = dx > 0 ? 'right' : 'left';
+                            const projectile = {
+                                id: `enemy-fireball-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                                type: 'fireball',
+                                x: enemy.x + (direction === 'right' ? 32 : -8),
+                                y: enemy.y + 16,
+                                vx: direction === 'right' ? 600 : -600,
+                                vy: 0,
+                                damage: damage,
+                                playerId: enemy.id,
+                                weaponType: 'Wand',
+                                createdAt: Date.now(),
+                                lifeTime: 5000,
+                                isEnemyProjectile: true
+                            };
+                            
+                            levelState.projectiles = levelState.projectiles || [];
+                            levelState.projectiles.push(projectile);
+                            broadcastToLevel(levelName, { type: 'projectileCreated', ...projectile });
+                            enemy.attackCooldown = 2.0; // Longer cooldown for spells
+                        }
+                    }
+                } else {
+                    // Melee attack for other enemy types (basic, elite, boss)
+                    if (dist <= 80) {
+                        const p = getPlayersInLevel(levelName).find(p => p.id === nearest.id);
+                        if (p) {
+                            // Calculate damage from equipment
+                            const dmg = calculateEnemyDamage(enemy.level || 1, enemy.type, enemy.equip);
+                            p.health = Math.max(0, (p.health || p.maxHealth || 100) - dmg);
+                            
+                            // Start attack animation
+                            enemy.attackAnimTime = 0.25; // Same duration as player attacks
+                            
+                            // Attack cooldown based on weapon type
+                            if (enemy.equip && enemy.equip.mainhand && enemy.equip.mainhand.twoHanded) {
+                                enemy.attackCooldown = 0.8; // Slower for 2-handed weapons
+                            } else {
+                                enemy.attackCooldown = 0.6; // Faster for 1-handed or unarmed
+                            }
+                            
+                            // Check if player died
+                            if (p.health <= 0) {
+                                p.isDead = true;
+                                p.health = 0;
+                                
+                                // Drop the most valuable item from inventory/equipment
+                                const droppedItem = dropMostValuableItem(p);
+                                if (droppedItem) {
+                                const drop = {
+                                        id: `enemy-death-drop-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                                        x: p.x + 24,
+                                        y: p.y + 32,
+                                        item: droppedItem,
+                                        vx: (Math.random() - 0.5) * 100,
+                                        vy: -Math.random() * 100 - 200,
+                                        pickRadius: 40,
+                                        grounded: false
+                                    };
+                                    applyPickupDelay(drop);
+                                    levelState.worldDrops.push(drop);
+                                    broadcastToLevel(levelName, { type: 'dropItem', ...drop });
+                                }
+                                
+                                // Generate and broadcast death message
+                                const weaponName = enemy.equip && enemy.equip.mainhand ? enemy.equip.mainhand.subtype : 'Claw';
+                                const deathMessage = generateDeathMessage(p.name, enemy.name, weaponName);
+                                broadcastToLevel(levelName, {
+                                    type: 'chatMessage',
+                                    message: deathMessage,
+                                    color: '#ffa500'
+                                });
+                                
+                                broadcastToLevel(levelName, {
+                                    type: 'playerDeath',
+                                    playerId: p.id,
+                                    playerName: p.name
+                                });
+                            }
+                            
+                            // Notify all clients
+                            broadcastToLevel(levelName, { 
+                                type: 'playerHit', 
+                                id: p.id, 
+                                health: p.health, 
+                                byEnemyId: enemy.id, 
+                                damage: dmg 
+                            });
+                            broadcastToLevel(levelName, { 
+                                type: 'playerUpdate', 
+                                id: p.id, 
+                                x: p.x, 
+                                y: p.y, 
+                                health: p.health, 
+                                maxHealth: p.maxHealth, 
+                                pyreals: p.pyreals 
+                            });
+                        }
+                    }
+                }
             }
 
             // Broadcast enemy position updates to players in this level
-            broadcastToLevel(levelName, {
-                type: 'enemyUpdate',
-                id: enemy.id,
-                x: enemy.x,
-                y: enemy.y,
-                vx: enemy.vx || 0,
-                health: enemy.health,
-                maxHealth: enemy.maxHealth,
-                level: enemy.level,
-                colors: enemy.colors
-            });
+            // Throttle to 20fps (every 3 frames) to reduce network congestion
+            // Always send updates for dead wisps animating, attack animations, or if health changed
+            const shouldSendUpdate = (enemyUpdateFrameCounter % 3 === 0) || 
+                                     (enemy.dead && (enemy.type === 'waterwisp' || enemy.type === 'firewisp' || enemy.type === 'earthwisp' || enemy.type === 'windwisp')) ||
+                                     (enemy.attackAnimTime && enemy.attackAnimTime > 0) ||
+                                     (enemy._healthChanged !== undefined && enemy._healthChanged);
+            
+            if (shouldSendUpdate) {
+                const positionUpdate = {
+                    type: 'enemyUpdate',
+                    id: enemy.id,
+                    x: enemy.x,
+                    y: enemy.y,
+                    vx: enemy.vx || 0,
+                    health: enemy.health,
+                    maxHealth: enemy.maxHealth,
+                    level: enemy.level,
+                    enemyType: enemy.type, // Always include enemy type (as enemyType to avoid conflict with message type)
+                    attackAnimTime: enemy.attackAnimTime || 0, // Include attack animation
+                    facing: enemy.facing || 'right' // Include facing direction
+                };
+                // Only include colors for non-sprite-based enemies
+                if (enemy.type !== 'waterwisp' && enemy.type !== 'firewisp' && enemy.type !== 'earthwisp' && enemy.type !== 'windwisp' && enemy.colors) {
+                    positionUpdate.colors = enemy.colors;
+                }
+                // Include equipment for non-sprite-based enemies
+                if (enemy.type !== 'waterwisp' && enemy.type !== 'firewisp' && enemy.type !== 'earthwisp' && enemy.type !== 'windwisp' && enemy.equip) {
+                    positionUpdate.equip = enemy.equip;
+                }
+                // Include Wisp specific properties
+                if (enemy.type === 'waterwisp' || enemy.type === 'firewisp' || enemy.type === 'earthwisp' || enemy.type === 'windwisp') {
+                    positionUpdate.hurtAnimTime = enemy.hurtAnimTime;
+                    positionUpdate.dieAnimProgress = enemy.dieAnimProgress;
+                }
+                broadcastToLevel(levelName, positionUpdate);
+                enemy._healthChanged = false; // Reset health change flag
+            }
+            } // End of else block for non-dead-waterwisp enemies
         }
 
         // Handle projectile collision detection for this level
@@ -2225,16 +3558,120 @@ const gameLoopInterval = setInterval(() => {
             for (let i = 0; i < levelState.projectiles.length; i++) {
                 const projectile = levelState.projectiles[i];
                 
-                // Check if projectile has expired
-                if (now - projectile.createdAt > projectile.lifeTime) {
+                // Safety check: ensure projectile exists and has required properties
+                if (!projectile || !projectile.id) {
+                    projectilesToRemove.push(i);
+                    continue;
+                }
+                
+                // Check if projectile has expired (with safety check)
+                if (projectile.createdAt && projectile.lifeTime && 
+                    (now - projectile.createdAt > projectile.lifeTime)) {
                     projectilesToRemove.push(i);
                     continue;
                 }
                 
                 // Check collision with enemies (only for player projectiles)
+                // First check if hit was already detected during sub-stepping
+                if (projectile.hitEnemy) {
+                    // Hit was already detected during sub-stepping, process it now
+                    const hitEnemy = levelState.enemies.find(e => e && e.id === projectile.hitEnemy);
+                    if (hitEnemy && !hitEnemy.dead) {
+                        const damage = projectile.hitDamage || projectile.damage || 10;
+                        hitEnemy.health = Math.max(0, hitEnemy.health - damage);
+                        
+                        // Trigger damage flash (not for Wisp - it uses hurt sprites)
+                        if (hitEnemy.type !== 'waterwisp' && hitEnemy.type !== 'firewisp' && hitEnemy.type !== 'earthwisp' && hitEnemy.type !== 'windwisp') {
+                            hitEnemy.damageFlashTimer = 0.3;
+                        } else {
+                            // Set hurt animation for Wisp
+                            hitEnemy.hurtAnimTime = 0.3; // 0.3 second hurt animation
+                        }
+                        
+                        // Check if enemy died
+                        if (hitEnemy.health <= 0) {
+                            hitEnemy.dead = true;
+                            hitEnemy.isDead = true;
+                            hitEnemy.health = 0;
+                            
+                            // Set death animation progress for Wisp
+                            if (hitEnemy.type === 'waterwisp' || hitEnemy.type === 'firewisp' || hitEnemy.type === 'earthwisp' || hitEnemy.type === 'windwisp') {
+                                hitEnemy.dieAnimProgress = 0;
+                                // Broadcast death state immediately so client can play death animation
+                                const deathUpdateData = {
+                                    type: 'enemyUpdate',
+                                    id: hitEnemy.id,
+                                    health: 0,
+                                    maxHealth: hitEnemy.maxHealth,
+                                    dead: true,
+                                    isDead: true,
+                                    dieAnimProgress: 0,
+                                    enemyType: hitEnemy.type
+                                };
+                                broadcastToLevel(levelName, deathUpdateData);
+                            }
+                            
+                            // Drop equipped weapon, then finalize
+                            if (hitEnemy.equip && hitEnemy.equip.mainhand) {
+                                const drop = {
+                                    id: `enemy-death-drop-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                                    x: hitEnemy.x + 24,
+                                    y: hitEnemy.y + 32,
+                                    item: hitEnemy.equip.mainhand,
+                                    vx: (Math.random() - 0.5) * 100,
+                                    vy: -Math.random() * 100 - 200,
+                                    pickRadius: 40,
+                                    grounded: false
+                                };
+                                applyPickupDelay(drop);
+                                levelState.worldDrops.push(drop);
+                                broadcastToLevel(levelName, { type: 'dropItem', ...drop });
+                            }
+                            
+                            // For Wisp, delay finalization until death animation completes
+                            if (hitEnemy.type === 'waterwisp' || hitEnemy.type === 'firewisp' || hitEnemy.type === 'earthwisp' || hitEnemy.type === 'windwisp') {
+                                // Don't finalize yet - wait for animation
+                            } else {
+                                finalizeEnemyDeath(levelName, levelState, hitEnemy);
+                            }
+                        } else {
+                            // Broadcast enemy update
+                            broadcastToLevel(levelName, {
+                                type: 'enemyUpdate',
+                                id: hitEnemy.id,
+                                x: hitEnemy.x,
+                                y: hitEnemy.y,
+                                vx: hitEnemy.vx || 0,
+                                health: hitEnemy.health,
+                                maxHealth: hitEnemy.maxHealth,
+                                level: hitEnemy.level,
+                                colors: hitEnemy.colors,
+                                equip: hitEnemy.equip,
+                                attackAnimTime: hitEnemy.attackAnimTime || 0,
+                                facing: hitEnemy.facing || 'right'
+                            });
+                        }
+                    }
+                    
+                    // Mark projectile for removal
+                    projectilesToRemove.push(i);
+                    continue;
+                }
+                
                 if (!projectile.isEnemyProjectile) {
+                    // Ensure projectile has valid position properties
+                    if (typeof projectile.x !== 'number' || typeof projectile.y !== 'number') {
+                        continue;
+                    }
+                    
                     for (const enemy of levelState.enemies) {
-                        if (enemy.dead) continue;
+                        if (!enemy || enemy.dead) continue;
+                        
+                        // Safety check: ensure enemy has valid position properties
+                        if (typeof enemy.x !== 'number' || typeof enemy.y !== 'number') {
+                            console.warn('Enemy missing position data:', enemy.id);
+                            continue;
+                        }
                         
                         // Get enemy bounds (actual dimensions from enemy object)
                         const enemyW = enemy.w || 48; // Use 48 for consistency with character width
@@ -2250,30 +3687,28 @@ const gameLoopInterval = setInterval(() => {
                         const prevX = projectile.prevX !== undefined ? projectile.prevX : projectile.x;
                         const prevY = projectile.prevY !== undefined ? projectile.prevY : projectile.y;
                         
-                        // Use radius-based collision detection for more reliable hits
-                        // Projectile has a hit radius, enemy has a larger hitbox
-                        const projectileRadius = 8; // Hit radius for projectile
-                        const enemyHitRadius = Math.max(enemyW, enemyH) / 2 + projectileRadius; // Expanded hit radius
+                        // Use bounding box intersection for reliable hits with full enemy body
+                        // Projectile has a small hit radius, but we check if it intersects the enemy bounding box
+                        const projectileRadius = 4; // Small hit radius for projectile
                         
-                        // Check distance from projectile to enemy center
-                        const dx = projectile.x - enemyCenterX;
-                        const dy = projectile.y - enemyCenterY;
-                        const distance = Math.hypot(dx, dy);
+                        // Expand enemy bounding box by projectile radius for intersection check
+                        // This ensures projectiles hit if they intersect anywhere with the enemy body
+                        const expandedLeft = enemyLeft - projectileRadius;
+                        const expandedRight = enemyRight + projectileRadius;
+                        const expandedTop = enemyTop - projectileRadius;
+                        const expandedBottom = enemyBottom + projectileRadius;
                         
                         let hit = false;
                         
-                        // First check: radius-based collision (more forgiving)
-                        if (distance <= enemyHitRadius) {
+                        // First check: if projectile is currently intersecting enemy bounding box (expanded by projectile radius)
+                        // This is the primary check - uses full enemy body dimensions
+                        if (projectile.x >= expandedLeft && projectile.x <= expandedRight &&
+                            projectile.y >= expandedTop && projectile.y <= expandedBottom) {
                             hit = true;
                         }
-                        // Second check: if projectile is currently inside enemy bounding box
-                        else if (projectile.x >= enemyLeft && projectile.x <= enemyRight &&
-                                 projectile.y >= enemyTop && projectile.y <= enemyBottom) {
-                            hit = true;
-                        }
-                        // Third check: if projectile was previously inside enemy bounding box
-                        else if (prevX >= enemyLeft && prevX <= enemyRight &&
-                                 prevY >= enemyTop && prevY <= enemyBottom) {
+                        // Second check: if projectile was previously intersecting enemy bounding box
+                        else if (prevX >= expandedLeft && prevX <= expandedRight &&
+                                 prevY >= expandedTop && prevY <= expandedBottom) {
                             hit = true;
                         }
                         // Fourth check: sample multiple points along projectile path for fast-moving projectiles
@@ -2284,25 +3719,16 @@ const gameLoopInterval = setInterval(() => {
                             
                             if (lineLength > 0) {
                                 // Sample points along the path (more samples for faster projectiles)
-                                const numSamples = Math.max(3, Math.ceil(lineLength / 10)); // Sample every 10 pixels
+                                const numSamples = Math.max(5, Math.ceil(lineLength / 5)); // Sample every 5 pixels for better detection
                                 for (let s = 0; s <= numSamples; s++) {
                                     const t = s / numSamples;
                                     const sampleX = prevX + lineDx * t;
                                     const sampleY = prevY + lineDy * t;
                                     
-                                    // Check if sample point is within enemy hit radius
-                                    const sampleDx = sampleX - enemyCenterX;
-                                    const sampleDy = sampleY - enemyCenterY;
-                                    const sampleDistance = Math.hypot(sampleDx, sampleDy);
-                                    
-                                    if (sampleDistance <= enemyHitRadius) {
-                                        hit = true;
-                                        break;
-                                    }
-                                    
-                                    // Also check bounding box for sample point
-                                    if (sampleX >= enemyLeft && sampleX <= enemyRight &&
-                                        sampleY >= enemyTop && sampleY <= enemyBottom) {
+                                    // Check if sample point intersects expanded enemy bounding box
+                                    // This uses the full enemy body dimensions, not just a radius
+                                    if (sampleX >= expandedLeft && sampleX <= expandedRight &&
+                                        sampleY >= expandedTop && sampleY <= expandedBottom) {
                                         hit = true;
                                         break;
                                     }
@@ -2362,52 +3788,28 @@ const gameLoopInterval = setInterval(() => {
                         if (hit) {
                             // Deal damage
                             enemy.health -= projectile.damage;
+                            enemy._healthChanged = true; // Mark health change for immediate update
                             
-                            if (enemy.health <= 0) {
-                                enemy.dead = true;
-                                // Remove dead enemy from array
-                                const enemyIndex = levelState.enemies.findIndex(e => e.id === enemy.id);
-                                if (enemyIndex !== -1) {
-                                    levelState.enemies.splice(enemyIndex, 1);
-                                }
-                                
-                                // Spawn loot when enemy dies
-                                const enemyType = enemy.type || 'basic';
-                                const lootItems = generateLoot(enemyType, enemy.level || 1);
-                                
-                                for (const lootItem of lootItems) {
-                                    // Ensure weapon damage types are explicitly set
-                                    if (lootItem.type === 'weapon' && !lootItem.physicalDamageType) {
-                                        console.warn(`[server] Weapon ${lootItem.name} missing physicalDamageType in level loop`);
-                                    }
-                                    const dropX = enemy.x + (Math.random() - 0.5) * 100;
-                                    const dropY = enemy.y + 10;
-                                    const drop = {
-                                        id: `enemy-loot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                                        x: dropX,
-                                        y: dropY,
-                                        item: lootItem,
-                                        vx: (Math.random() - 0.5) * 140,
-                                        vy: -Math.random() * 120 - 260,
-                                        pickRadius: 40,
-                                        grounded: false,
-                                        noPickupUntil: Date.now() + 300
-                                    };
-                                    levelState.worldDrops.push(drop);
-                                    if (lootItem.type === 'weapon') {
-                                        console.log(`[server] Broadcasting weapon drop in level loop: ${lootItem.name}, physicalDamageType: ${lootItem.physicalDamageType}, elementalDamageType: ${lootItem.elementalDamageType || 'none'}`);
-                                    }
-                                    broadcastToLevel(levelName, { type: 'dropItem', ...drop });
-                                }
-                                
-                                // Schedule respawn
-                                const spawner = levelState.spawners.find(s => s.id === enemy.spawnerId);
-                                if (spawner) {
-                                    spawner.currentEnemyId = null;
-                                    spawner.respawnAt = Date.now() + 8000; // 8 seconds respawn
-                                }
-                                
-                                broadcastToLevel(levelName, { type: 'enemyDeath', id: enemy.id });
+                        if (enemy.health <= 0) {
+                            enemy.dead = true;
+                            
+                            if (enemy.equip && enemy.equip.mainhand) {
+                                const drop = {
+                                    id: `enemy-death-drop-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                                    x: enemy.x + 24,
+                                    y: enemy.y + 32,
+                                    item: enemy.equip.mainhand,
+                                    vx: (Math.random() - 0.5) * 100,
+                                    vy: -Math.random() * 100 - 200,
+                                    pickRadius: 40,
+                                    grounded: false
+                                };
+                                applyPickupDelay(drop);
+                                levelState.worldDrops.push(drop);
+                                broadcastToLevel(levelName, { type: 'dropItem', ...drop });
+                            }
+                            
+                            finalizeEnemyDeath(levelName, levelState, enemy);
                             } else {
                                 broadcastToLevel(levelName, { 
                                     type: 'enemyUpdate', 
@@ -2426,8 +3828,19 @@ const gameLoopInterval = setInterval(() => {
                 
                 // Check collision with players (for enemy projectiles)
                 if (projectile.isEnemyProjectile) {
+                    // Ensure projectile has valid position properties
+                    if (typeof projectile.x !== 'number' || typeof projectile.y !== 'number') {
+                        continue;
+                    }
+                    
                     for (const player of playersInLevel) {
-                        if (player.isDead) continue;
+                        if (!player || player.isDead) continue;
+                        
+                        // Safety check: ensure player has valid position properties
+                        if (typeof player.x !== 'number' || typeof player.y !== 'number') {
+                            console.warn('Player missing position data:', player.name || player.id);
+                            continue;
+                        }
                         
                         const dx = projectile.x - (player.x + 24); // Player center
                         const dy = projectile.y - (player.y + 32); // Player center
@@ -2454,12 +3867,11 @@ const gameLoopInterval = setInterval(() => {
                                         vx: (Math.random() - 0.5) * 100,
                                         vy: -Math.random() * 100 - 200,
                                         pickRadius: 40,
-                                        grounded: false,
-                                        noPickupUntil: Date.now() + 3000 // 3 seconds delay
+                                        grounded: false
                                     };
+                                    applyPickupDelay(drop);
                                     levelState.worldDrops.push(drop);
                                     broadcastToLevel(levelName, { type: 'dropItem', ...drop });
-                                    console.log(`Player ${player.name} dropped ${droppedItem.name} due to enemy spell`);
                                 }
                                 
                                 // Generate and broadcast death message
@@ -2498,29 +3910,37 @@ const gameLoopInterval = setInterval(() => {
                             
                             // Destroy projectile on hit
                             projectilesToRemove.push(i);
-                            console.log(`Enemy fireball hit player ${player.name} for ${projectile.damage} damage`);
                             break;
                         }
                     }
                 }
                 
                 // Check collision with environment (floor tiles)
-                const floors = levelState.levelData ? levelState.levelData.floors || [] : [];
-                let hitFloor = false;
-                for (const floor of floors) {
-                    if (projectile.x > floor.x && 
-                        projectile.x < floor.x + floor.width && 
-                        projectile.y > floor.y && 
-                        projectile.y < floor.y + floor.height) {
-                        projectilesToRemove.push(i);
-                        hitFloor = true;
-                        break;
+                // Ensure projectile has valid position properties before checking floor collision
+                if (typeof projectile.x === 'number' && typeof projectile.y === 'number') {
+                    const floors = levelState.levelData ? levelState.levelData.floors || [] : [];
+                    let hitFloor = false;
+                    for (const floor of floors) {
+                        // Safety check: ensure floor has valid properties
+                        if (!floor || typeof floor.x !== 'number' || typeof floor.y !== 'number' ||
+                            typeof floor.width !== 'number' || typeof floor.height !== 'number') {
+                            continue;
+                        }
+                        
+                        if (projectile.x > floor.x && 
+                            projectile.x < floor.x + floor.width && 
+                            projectile.y > floor.y && 
+                            projectile.y < floor.y + floor.height) {
+                            projectilesToRemove.push(i);
+                            hitFloor = true;
+                            break;
+                        }
                     }
-                }
-                
-                // Fallback to old ground collision if no floor collision
-                if (!hitFloor && projectile.y > GROUND_Y) {
-                    projectilesToRemove.push(i);
+                    
+                    // Fallback to old ground collision if no floor collision
+                    if (!hitFloor && projectile.y > GROUND_Y) {
+                        projectilesToRemove.push(i);
+                    }
                 }
             }
             
@@ -2537,10 +3957,32 @@ const gameLoopInterval = setInterval(() => {
                 });
             }
         }
+    }
+}, 16); // ~60 FPS for projectiles
 
+// Enemy spawning interval (separate from projectile updates and enemy AI)
+setInterval(() => {
+    const now = Date.now();
+    
+    // Process each level separately
+    for (const [levelName, levelState] of levelGameStates) {
+        // Only spawn enemies in levels that have players
+        const playersInLevel = getPlayersInLevel(levelName);
+        if (playersInLevel.length === 0) continue;
+        
+        // Debug: Log spawner status
+        if (levelState.spawners && levelState.spawners.length > 0) {
+            const readySpawners = levelState.spawners.filter(sp => !sp.currentEnemyId && now >= sp.respawnAt);
+            if (readySpawners.length > 0) {
+            }
+        }
+        
         // Handle respawns for this level
-        for (const sp of levelState.spawners) {
-            if (!sp.currentEnemyId && now >= sp.respawnAt) {
+        if (!levelState.spawners || levelState.spawners.length === 0) {
+        }
+        for (const sp of levelState.spawners || []) {
+            if (!sp) continue;
+            if (!sp.currentEnemyId && now >= (sp.respawnAt || 0)) {
                 // Calculate proper Y position using floor collision
                 // Find the floor that the spawner X position is over
                 // Spawners should be placed ON TOP of floors, not inside them
@@ -2611,28 +4053,25 @@ const gameLoopInterval = setInterval(() => {
                 const maxLevel = sp.maxLevel || 3;
                 const enemyLevel = minLevel + Math.floor(Math.random() * (maxLevel - minLevel + 1));
                 
-                const enemy = {
-                    id: levelState.nextEnemyId++,
-                    x: sp.x,
-                    y: enemyY,
-                    level: enemyLevel,
-                    health: 20 + enemyLevel * 12,
-                    maxHealth: 20 + enemyLevel * 12,
-                    spawnerId: sp.id,
-                    homeX: sp.x,
-                    homeY: enemyY,
-                    visibilityRange: sp.visibilityRange,
-                    type: sp.type || 'basic',
-                    dead: false,
-                    attackCooldown: 0,
-                    name: getRandomEnemyName(),
-                    colors: generateNPCColors()
-                };
+                // Use createEnemy function to properly initialize enemy with equipment and stats
+                const enemyType = sp.type || 'basic';
+                const enemy = createEnemy(sp.x, enemyY, enemyLevel, enemyType);
+                // Override spawn-specific properties
+                enemy.id = levelState.nextEnemyId++;
+                enemy.spawnerId = sp.id; // CRITICAL: Set spawnerId so respawn works
+                enemy.homeX = sp.x;
+                enemy.homeY = enemyY;
+                enemy.visibilityRange = sp.visibilityRange;
+                enemy.dead = false;
+                enemy.attackCooldown = 0;
+                // Health is already set by createEnemy, but we can adjust if needed
+                enemy.health = 20 + enemyLevel * 12;
+                enemy.maxHealth = 20 + enemyLevel * 12;
                 levelState.enemies.push(enemy);
                 sp.currentEnemyId = enemy.id;
                 
                 // Broadcast to players in this level only
-                broadcastToLevel(levelName, { 
+                const spawnData = { 
                     type: 'enemySpawned', 
                     id: enemy.id,
                     x: enemy.x,
@@ -2640,14 +4079,30 @@ const gameLoopInterval = setInterval(() => {
                     level: enemy.level,
                     health: enemy.health,
                     maxHealth: enemy.maxHealth,
-                    type: enemy.type,
+                    enemyType: enemy.type, // Use enemyType to avoid conflict with message type
                     name: enemy.name,
-                    colors: enemy.colors
-                });
+                    attackAnimTime: enemy.attackAnimTime || 0, // Include attack animation
+                    facing: enemy.facing || 'right' // Include facing direction
+                };
+                // Only include colors for non-sprite-based enemies
+                if (enemy.type !== 'waterwisp' && enemy.type !== 'firewisp' && enemy.type !== 'earthwisp' && enemy.type !== 'windwisp' && enemy.colors) {
+                    spawnData.colors = enemy.colors;
+                }
+                // Include equipment for non-sprite-based enemies
+                if (enemy.type !== 'waterwisp' && enemy.type !== 'firewisp' && enemy.type !== 'earthwisp' && enemy.type !== 'windwisp' && enemy.equip) {
+                    spawnData.equip = enemy.equip;
+                }
+                // Include Wisp specific properties
+                if (enemy.type === 'waterwisp' || enemy.type === 'firewisp' || enemy.type === 'earthwisp' || enemy.type === 'windwisp') {
+                    spawnData.attackRange = enemy.attackRange;
+                    spawnData.hurtAnimTime = enemy.hurtAnimTime || 0;
+                    spawnData.dieAnimProgress = enemy.dieAnimProgress || 0;
+                }
+                broadcastToLevel(levelName, spawnData);
             }
         }
     }
-}, 100); // 10 FPS for enemy AI
+}, 1000); // Check for enemy spawns every second
 
 // Apply physics to vendor (gravity and floor collision) - this should be per-level too
 const vendorPhysicsInterval = setInterval(() => {
@@ -2778,7 +4233,6 @@ const vendorPhysicsInterval = setInterval(() => {
                         });
                         
                         enemy.attackCooldown = 2.0; // Longer cooldown for spells
-                        console.log(`Spellcaster ${enemy.name} cast fireball at player ${p.name}`);
                     }
                 }
             } else {
@@ -2807,16 +4261,15 @@ const vendorPhysicsInterval = setInterval(() => {
                                 vx: (Math.random() - 0.5) * 100,
                                 vy: -Math.random() * 100 - 200,
                                 pickRadius: 40,
-                                grounded: false,
-                                noPickupUntil: Date.now() + 3000 // 3 seconds delay to prevent immediate pickup after death
+                                grounded: false
                             };
+                            applyPickupDelay(drop);
                             gameState.worldDrops.push(drop);
                             // Broadcast item drop to all players
                             broadcastToAll({
                                 type: 'dropItem',
                                 ...drop
                             });
-                            console.log(`Player ${p.name} dropped ${droppedItem.name} due to death`);
                         }
                         
                         // Generate and broadcast death message
@@ -2868,9 +4321,9 @@ function handleEnemyDeath(enemy, gameState, broadcastToAll) {
             vx: (Math.random() - 0.5) * 100,
             vy: -Math.random() * 100 - 200,
             pickRadius: 40,
-            grounded: false,
-            noPickupUntil: Date.now() + 2000 // 2 seconds delay
+            grounded: false
         };
+        applyPickupDelay(drop);
         
         gameState.worldDrops.push(drop);
         
@@ -2881,7 +4334,6 @@ function handleEnemyDeath(enemy, gameState, broadcastToAll) {
         });
     });
     
-    console.log(`Enemy ${enemy.name} (L${enemy.level}) died and dropped ${loot.length} items`);
     
     // Mark enemy for respawn
     enemy.respawnAt = Date.now() + 10000; // 10 seconds
@@ -2973,44 +4425,32 @@ const HTTPS_PORT = process.env.HTTPS_PORT || 8443;
 const HOST = '0.0.0.0';
 
 httpServer.listen(HTTP_PORT, HOST, () => {
-    console.log(`Browseron's Call HTTP server running on port ${HTTP_PORT}`);
-    console.log(`Game available at: http://localhost:${HTTP_PORT}`);
-    console.log(`WebSocket endpoint: ws://localhost:${HTTP_PORT}`);
 });
 
 if (httpsWss) {
     httpsServer.listen(HTTPS_PORT, HOST, () => {
-        console.log(`Browseron's Call HTTPS server running on port ${HTTPS_PORT}`);
-        console.log(`Game available at: https://localhost:${HTTPS_PORT}`);
-        console.log(`WebSocket endpoint: wss://localhost:${HTTPS_PORT}`);
     });
 }
 
 // Graceful shutdown
 process.on('SIGINT', () => {
-    console.log('\nShutting down server gracefully...');
     clearInterval(interval);
     httpWss.close(() => {
         if (httpsWss) {
             httpsWss.close(() => {
-                console.log('HTTPS server shut down successfully');
             });
         }
-        console.log('HTTP server shut down successfully');
         process.exit(0);
     });
 });
 
 process.on('SIGTERM', () => {
-    console.log('\nReceived SIGTERM, shutting down...');
     clearInterval(interval);
     httpWss.close(() => {
         if (httpsWss) {
             httpsWss.close(() => {
-                console.log('HTTPS server shut down successfully');
             });
         }
-        console.log('HTTP server shut down successfully');
         process.exit(0);
     });
 });

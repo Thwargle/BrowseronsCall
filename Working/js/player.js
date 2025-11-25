@@ -70,6 +70,7 @@ function savePlayerData(playerName, playerData) {
         const fileName = `${playerName.replace(/[^a-zA-Z0-9]/g, '_')}.json`;
         const filePath = path.join(PLAYER_DATA_DIR, fileName);
         
+        // Deep clone to ensure all nested properties (including item.locked) are preserved
         const dataToSave = {
             id: playerData.id,
             name: playerData.name,
@@ -78,8 +79,8 @@ function savePlayerData(playerName, playerData) {
             health: playerData.health,
             maxHealth: playerData.maxHealth,
             pyreals: playerData.pyreals !== undefined && playerData.pyreals !== null ? playerData.pyreals : 0, // Ensure pyreals are always saved, defaulting to 0
-            equip: playerData.equip,
-            inventory: playerData.inventory,
+            equip: JSON.parse(JSON.stringify(playerData.equip || {})), // Deep clone to preserve all item properties including locked
+            inventory: JSON.parse(JSON.stringify(playerData.inventory || [])), // Deep clone to preserve all item properties including locked
             shirtColor: playerData.shirtColor,
             pantColor: playerData.pantColor,
             equipmentColors: playerData.equipmentColors,

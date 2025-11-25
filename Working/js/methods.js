@@ -2,6 +2,8 @@
 (function(){
 'use strict';
 
+const DROP_PICKUP_DELAY_MS = 800;
+
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 window.VIEW_W = canvas.width; 
@@ -132,13 +134,29 @@ window.weaponKindFromName=function(name){
 }
 
 // Check if a weapon is two-handed (client-side version)
+const TWO_HANDED_WEAPON_TYPES = [
+    'Spear',
+    'Javelin',
+    'Trident',
+    'Pike',
+    'Staff',
+    'Wand',
+    'Halberd',
+    'Bow',
+    'Crossbow',
+    'Longsword',
+    'Greatsword',
+    'Warhammer',
+    'Battleaxe',
+    'Maul'
+];
+
 window.checkIfTwoHanded = function(itemOrName) {
     if (!itemOrName) return false;
     
     // If it's a string, check directly
     if (typeof itemOrName === 'string') {
-        const twoHandedWeapons = ['Spear', 'Javelin', 'Trident', 'Pike', 'Staff', 'Halberd', 'Bow', 'Crossbow'];
-        return twoHandedWeapons.includes(itemOrName);
+        return TWO_HANDED_WEAPON_TYPES.includes(itemOrName);
     }
     
     // If it's an item object, check properties
@@ -147,15 +165,13 @@ window.checkIfTwoHanded = function(itemOrName) {
     }
     
     if (itemOrName.subtype) {
-        const twoHandedWeapons = ['Spear', 'Javelin', 'Trident', 'Pike', 'Staff', 'Halberd', 'Bow', 'Crossbow'];
-        return twoHandedWeapons.includes(itemOrName.subtype);
+        return TWO_HANDED_WEAPON_TYPES.includes(itemOrName.subtype);
     }
     
     if (itemOrName.name) {
         const weaponKind = window.weaponKindFromName(itemOrName.name);
         if (weaponKind) {
-            const twoHandedWeapons = ['Spear', 'Javelin', 'Trident', 'Pike', 'Staff', 'Halberd', 'Bow', 'Crossbow'];
-            return twoHandedWeapons.includes(weaponKind);
+            return TWO_HANDED_WEAPON_TYPES.includes(weaponKind);
         }
     }
     
@@ -168,16 +184,69 @@ const ICON_CACHE=new Map(), ICON_IMG_CACHE=new Map();
 // Weapon image cache
 const WEAPON_IMAGE_CACHE = new Map();
 const WAND_IMAGE_CACHE = new Map();
+const WEAPON_SPRITE_CACHE = new Map();
 
-// Function to load weapon image
+const WEAPON_IMAGE_VARIANTS = {
+    'Sword': ['Sword_1', 'Sword_2', 'Sword_3', 'Sword_4', 'Sword_5', 'Sword_6'],
+    'Longsword': ['Sword_8', 'Sword_9', 'Sword_10', 'Sword_12'],
+    'Rapier': ['Sword_7'],
+    'Saber': ['Sword_11', 'Sword_13'],
+    'Scimitar': ['Sword_14'],
+    'Axe': ['Axe'],
+    'Mace': ['Mace_1', 'Mace_2', 'Mace_3'],
+    'Club': ['Mace_2'],
+    'Hammer': ['Hammer_1', 'Hammer_2'],
+    'Warhammer': ['Hammer_1', 'Hammer_2'],
+    'Maul': ['Hammer_1', 'Hammer_2'],
+    'Dagger': ['Dagger_1', 'Dagger_2', 'Dagger_3', 'Dagger_4', 'Dagger_5'],
+    'Bow': ['Bow_1', 'Bow_2', 'Bow_3', 'Bow_4'],
+    'Spear': ['Shovel', 'Spear_2', 'Spear_3', 'Spear_4'],
+    'Halberd': ['Spear_1'],
+    'Javelin': ['Spear_4'],
+    'Trident': ['Spear_5'],
+    'Pike': ['Spear_2']
+};
+
+const WEAPON_TYPE_FALLBACKS = {
+    'Blade': 'Sword',
+    'Greatsword': 'Sword',
+    'Katana': 'Sword',
+    'Battleaxe': 'Axe',
+    'Flail': 'Mace',
+    'Crossbow': 'Bow',
+    'Staff': 'Wand'
+};
+
+const WAND_RARITY_VARIANTS = {
+    'Common': ['Blue_1', 'Blue_2', 'Blue_3', 'Blue_4', 'Green_1', 'Green_2', 'Green_3', 'Green_4', 'Red_1', 'Red_2', 'Red_3', 'Red_4'],
+    'Uncommon': ['Blue_5', 'Blue_6', 'Blue_7', 'Blue_8', 'Green_5', 'Green_6', 'Green_7', 'Green_8', 'Red_5', 'Red_6', 'Red_7', 'Red_8'],
+    'Rare': ['Blue_9', 'Blue_10', 'Blue_11', 'Green_9', 'Green_10', 'Green_11', 'Red_9', 'Red_10', 'Red_11'],
+    'Epic': ['Blue_12', 'Green_12', 'Red_12'],
+    'Legendary': ['Blue_13', 'Green_13', 'Red_13']
+};
+
+function resolveWeaponVariants(type, seen = new Set()) {
+    if (!type) return WEAPON_IMAGE_VARIANTS['Sword'];
+    if (WEAPON_IMAGE_VARIANTS[type]) return WEAPON_IMAGE_VARIANTS[type];
+    if (seen.has(type)) return WEAPON_IMAGE_VARIANTS['Sword'];
+    seen.add(type);
+    const fallback = WEAPON_TYPE_FALLBACKS[type];
+    if (fallback) {
+        return resolveWeaponVariants(fallback, seen);
+    }
+    return WEAPON_IMAGE_VARIANTS['Sword'];
+}
+
+function getWandVariants(rarity) {
+    return WAND_RARITY_VARIANTS[rarity] || WAND_RARITY_VARIANTS['Common'];
+}
+
 function loadWeaponImage(weaponType, item = null) {
-    // Use item level or hash of item name to determine variant
     let variantNum = 1;
     let variantHash = 0;
     
     if (item && typeof item === 'object') {
         variantNum = item.level || 1;
-        // Hash item name for consistent variant selection
         if (item.name) {
             for (let i = 0; i < item.name.length; i++) {
                 variantHash += item.name.charCodeAt(i);
@@ -189,7 +258,6 @@ function loadWeaponImage(weaponType, item = null) {
     
     const cacheKey = `${weaponType}_${variantNum}_${variantHash}`;
     
-    // Check if already cached
     if (WEAPON_IMAGE_CACHE.has(cacheKey)) {
         const cached = WEAPON_IMAGE_CACHE.get(cacheKey);
         if (cached && cached.complete && cached.naturalWidth > 0) {
@@ -197,107 +265,123 @@ function loadWeaponImage(weaponType, item = null) {
         }
     }
     
-    // Create image path
+    const variantSeed = Math.abs(variantNum + variantHash);
+    const weaponTypeString = (typeof weaponType === 'string' && weaponType.trim().length) ? weaponType.trim() : '';
+    const subtype = item && typeof item === 'object' && item.subtype ? item.subtype.trim() : '';
+    const normalizedType = weaponTypeString || subtype || 'Sword';
+    const treatAsWand = normalizedType === 'Wand' || normalizedType === 'Staff' || subtype === 'Wand' || subtype === 'Staff';
     let imagePath = '';
-    let imageName = '';
     
-    // Map weapon types to image files
-    const weaponImageMap = {
-        'Sword': 'Sword',
-        'Axe': 'Axe',
-        'Dagger': 'Dagger',
-        'Hammer': 'Hammer',
-        'Mace': 'Mace',
-        'Spear': 'Spear',
-        'Bow': 'Bow',
-        'Staff': 'Wand', // Staff uses wand images
-        'Wand': 'Wand', // Wands are in separate folder
-        'Katana': 'Sword', // Use sword images for katana
-        'Rapier': 'Sword', // Use sword images for rapier
-        'Saber': 'Sword', // Use sword images for saber
-        'Blade': 'Sword', // Use sword images for blade
-        'Longsword': 'Sword', // Use sword images for longsword
-        'Greatsword': 'Sword', // Use sword images for greatsword
-        'Scimitar': 'Sword', // Use sword images for scimitar
-        'Warhammer': 'Hammer', // Use hammer images for warhammer
-        'Battleaxe': 'Axe', // Use axe images for battleaxe
-        'Halberd': 'Spear', // Use spear images for halberd
-        'Crossbow': 'Bow', // Use bow images for crossbow
-        'Club': 'Mace', // Use mace images for club
-        'Maul': 'Hammer', // Use hammer images for maul
-        'Flail': 'Mace', // Use mace images for flail
-        'Javelin': 'Spear', // Use spear images for javelin
-        'Trident': 'Spear', // Use spear images for trident
-        'Pike': 'Spear' // Use spear images for pike
+    const getCachedSprite = () => {
+        // First check if item already has sprite stored
+        if (item && item.weaponSprite) {
+            return { fileName: item.weaponSprite, isWand: item.weaponSpriteType === 'wand' };
+        }
+        // Then check cache by item ID and restore to item if found
+        if (item && item.id && WEAPON_SPRITE_CACHE.has(item.id)) {
+            const cached = WEAPON_SPRITE_CACHE.get(item.id);
+            // Restore sprite to item object for consistency
+            if (item && typeof item === 'object') {
+                item.weaponSprite = cached.fileName;
+                item.weaponSpriteType = cached.isWand ? 'wand' : 'weapon';
+            }
+            return cached;
+        }
+        return null;
     };
     
-    const baseType = weaponImageMap[weaponType] || 'Sword';
+    let spriteInfo = getCachedSprite();
     
-    // Handle wands separately (they have color variants)
-    if (baseType === 'Wand' || weaponType === 'Wand' || weaponType === 'Staff') {
-        // For wands, pick a variant based on weapon level or hash of name
-        const wandVariants = ['Red', 'Green', 'Blue'];
-        const colorIndex = variantHash % 3;
-        const wandColor = wandVariants[colorIndex];
-        const wandNumber = ((variantNum - 1) % 13) + 1; // 1-13
-        imageName = `${wandColor}_${wandNumber}.png`;
-        imagePath = `assets/Wands/${imageName}`;
-    } else {
-        // For weapons, select variant based on level
-        // Check if weapon has numbered variants
-        const hasVariants = ['Sword', 'Dagger', 'Spear', 'Bow', 'Mace', 'Hammer'].includes(baseType);
+    if (!spriteInfo) {
+        const variants = treatAsWand ? getWandVariants(item && typeof item === 'object' && item.rarity ? item.rarity : 'Common')
+            : resolveWeaponVariants(normalizedType);
         
-        if (hasVariants) {
-            // Use level to select variant, with some randomization
-            const variantSelect = ((variantNum - 1) + (variantHash % 3)) % 14 + 1; // 1-14 for swords, adjust for others
-            if (baseType === 'Sword') {
-                imageName = variantSelect <= 14 ? `Sword_${Math.min(variantSelect, 14)}.png` : 'Sword_1.png';
-            } else if (baseType === 'Dagger') {
-                imageName = variantSelect <= 5 ? `Dagger_${Math.min(variantSelect, 5)}.png` : 'Dagger_1.png';
-            } else if (baseType === 'Spear') {
-                imageName = variantSelect <= 5 ? `Spear_${Math.min(variantSelect, 5)}.png` : 'Spear_1.png';
-            } else if (baseType === 'Bow') {
-                imageName = variantSelect <= 4 ? `Bow_${Math.min(variantSelect, 4)}.png` : 'Bow_1.png';
-            } else if (baseType === 'Mace') {
-                imageName = variantSelect <= 3 ? `Mace_${Math.min(variantSelect, 3)}.png` : 'Mace_1.png';
-            } else if (baseType === 'Hammer') {
-                imageName = variantSelect <= 2 ? `Hammer_${Math.min(variantSelect, 2)}.png` : 'Hammer_1.png';
-            } else {
-                imageName = `${baseType}.png`;
+        // For wands, use a better randomization to ensure all color variants (Blue, Green, Red) are available
+        let variantIndex;
+        if (treatAsWand) {
+            // Use the random part of item ID for well-distributed variant selection
+            // Item IDs are like: "weapon-1234567890-abc123xyz" where the last part is a base-36 random string
+            let wandSeed = 0;
+            if (item && item.id) {
+                const idParts = item.id.split('-');
+                // The last part is the random alphanumeric string generated with Math.random().toString(36)
+                // Parse it as a base-36 number for direct, well-distributed seed
+                if (idParts.length > 0) {
+                    const randomPart = idParts[idParts.length - 1];
+                    if (randomPart && randomPart.length > 0) {
+                        try {
+                            // Parse the base-36 string directly - this gives us the random value
+                            // that was used to generate it, providing excellent distribution
+                            wandSeed = parseInt(randomPart, 36);
+                        } catch (e) {
+                            // Fallback: convert character by character if parseInt fails
+                            for (let i = 0; i < randomPart.length; i++) {
+                                const char = randomPart[i];
+                                const charValue = /[0-9]/.test(char) ? parseInt(char, 10) : 
+                                                 /[a-z]/.test(char) ? char.charCodeAt(0) - 87 : 0;
+                                wandSeed = wandSeed * 36 + charValue;
+                            }
+                        }
+                    }
+                }
+                // Add timestamp for additional variation (use last few digits to avoid overflow)
+                if (idParts.length > 1) {
+                    const timestampPart = idParts[idParts.length - 2];
+                    if (timestampPart && /^\d+$/.test(timestampPart)) {
+                        const timestamp = parseInt(timestampPart, 10);
+                        // Use last 6 digits of timestamp to add variation without overflow
+                        wandSeed = wandSeed + (timestamp % 1000000);
+                    }
+                }
             }
+            // Use the seed to select variant - should give excellent distribution
+            variantIndex = variants.length ? Math.abs(wandSeed) % variants.length : 0;
         } else {
-            imageName = `${baseType}.png`;
+            variantIndex = variants.length ? variantSeed % variants.length : 0;
         }
         
-        imagePath = `assets/Weapons/${imageName}`;
+        const variantName = variants[variantIndex] || variants[0];
+        const fileName = variantName.endsWith('.png') ? variantName : `${variantName}.png`;
+        spriteInfo = { fileName, isWand: treatAsWand };
+        if (item && typeof item === 'object') {
+            item.weaponSprite = fileName;
+            item.weaponSpriteType = treatAsWand ? 'wand' : 'weapon';
+            if (item.id) {
+                WEAPON_SPRITE_CACHE.set(item.id, spriteInfo);
+            }
+        }
+    }
+    
+    if (spriteInfo.isWand) {
+        imagePath = `assets/Wands/${spriteInfo.fileName}`;
+    } else {
+        imagePath = `assets/Weapons/${spriteInfo.fileName}`;
     }
     
     const img = new Image();
     img.src = imagePath;
     img.onerror = () => {
-        // Fallback to rectangle if image fails to load
         WEAPON_IMAGE_CACHE.set(cacheKey, null);
     };
     WEAPON_IMAGE_CACHE.set(cacheKey, img);
-    WAND_IMAGE_CACHE.set(cacheKey, img); // Also cache in wand cache for wands
+    WAND_IMAGE_CACHE.set(cacheKey, img);
     return img;
 }
 
-// Preload common weapon images
+// Expose loadWeaponImage on window for use in other modules
+window.loadWeaponImage = loadWeaponImage;
+
 function preloadWeaponImages() {
-    const commonWeapons = ['Sword', 'Axe', 'Dagger', 'Hammer', 'Mace', 'Spear', 'Bow'];
-    commonWeapons.forEach(weapon => {
-        // Preload a few variants
-        for (let i = 1; i <= 3; i++) {
-            loadWeaponImage(weapon, i);
-        }
+    Object.keys(WEAPON_IMAGE_VARIANTS).forEach(type => {
+        const variants = WEAPON_IMAGE_VARIANTS[type];
+        variants.forEach((_, idx) => {
+            loadWeaponImage(type, { level: idx + 1, name: `${type}_${idx}`, subtype: type });
+        });
     });
     
-    // Preload some wand variants
-    for (let i = 1; i <= 5; i++) {
-        loadWeaponImage('Wand', { level: i, name: `Wand_${i}` });
-        loadWeaponImage('Staff', { level: i, name: `Staff_${i}` });
-    }
+    Object.keys(WAND_RARITY_VARIANTS).forEach((rarity, idx) => {
+        loadWeaponImage('Wand', { level: idx + 1, name: `Wand_${rarity}_${idx}`, rarity, subtype: 'Wand' });
+    });
 }
 
 // Initialize weapon image preloading when DOM is ready
@@ -371,6 +455,8 @@ function drawIcon(it){
         g.fillRect(4,4,56,56); 
         const r=it.rarity||'Common';
         
+        let usedPlaceholder = false;
+        
         if(it.type==='weapon'){
             const kind=weaponKindFromName(it.name)||it.subtype||'melee'; 
             
@@ -390,21 +476,28 @@ function drawIcon(it){
                 // Center the image in the icon
                 const iconX = 32 - scaledWidth / 2;
                 const iconY = 32 - scaledHeight / 2;
-                
-                // Draw with rotation if needed (for vertical weapons)
-                g.save();
-                g.translate(32, 32);
-                if (imgHeight > imgWidth) {
-                    // Vertical weapon, rotate 90 degrees
-                    g.rotate(Math.PI / 2);
-                }
-                g.drawImage(weaponImg, -scaledWidth / 2, -scaledHeight / 2, scaledWidth, scaledHeight);
-                g.restore();
+                g.drawImage(weaponImg, iconX, iconY, scaledWidth, scaledHeight);
                 imageDrawn = true;
+            } else if (weaponImg && !weaponImg.complete && typeof window !== 'undefined') {
+                const scheduleRefresh = () => {
+                    if (window._iconRefreshScheduled) return;
+                    window._iconRefreshScheduled = true;
+                    setTimeout(() => {
+                        window._iconRefreshScheduled = false;
+                        if (typeof window.displayInventoryItems === 'function') {
+                            window.displayInventoryItems();
+                        } else if (typeof window.refreshInventoryUI === 'function') {
+                            window.refreshInventoryUI();
+                        }
+                    }, 0);
+                };
+                weaponImg.addEventListener('load', () => scheduleRefresh(), { once: true });
+                weaponImg.addEventListener('error', () => scheduleRefresh(), { once: true });
             }
             
             // Fallback to rectangle drawing if image not available
             if (!imageDrawn) {
+                usedPlaceholder = true;
                 // Use elemental color instead of rarity
                 const elementalType = it.elementalDamageType;
                 const m = getWeaponColor(elementalType);
@@ -551,17 +644,29 @@ function drawIcon(it){
         
         const dataURL = c.toDataURL();
     
-        return dataURL;
+        return { dataURL, placeholder: usedPlaceholder };
         
     } catch (error) {
         console.error(`[${Date.now()}] Error in drawIcon:`, error);
-        return '';
+        return { dataURL: '', placeholder: true };
     }
 }
 function iconKey(it){ 
     if(!it || typeof it !== 'object' || !it.type || !it.rarity || !it.name) return 'empty'; 
-    const b=it.type==='armor'? it.slot: it.type==='weapon'? (weaponKindFromName(it.name)||it.subtype): it.type; 
-    return `${it.type}|${b}|${it.rarity}|${(it.name||'').split(' ')[1]||''}`; 
+    let base;
+    if (it.type === 'armor') {
+        base = it.slot || 'armor';
+    } else if (it.type === 'weapon') {
+        if (it.weaponSprite) {
+            base = `sprite:${it.weaponSpriteType || 'weapon'}:${it.weaponSprite}`;
+        } else {
+            base = weaponKindFromName(it.name)||it.subtype||'melee';
+        }
+    } else {
+        base = it.type;
+    }
+    const secondary = it.weaponSprite ? it.weaponSprite : (it.name||'').split(' ')[1]||'';
+    return `${it.type}|${base}|${it.rarity}|${secondary}`;
 }
 window.getItemIconDataURLForItem=function(it){ 
 
@@ -586,11 +691,15 @@ window.getItemIconDataURLForItem=function(it){
         }
         
 
-        const url = drawIcon(it); 
+        const { dataURL, placeholder } = drawIcon(it); 
 
         
-        ICON_CACHE.set(key,url); 
-        return url; 
+        if (!placeholder && dataURL) {
+            ICON_CACHE.set(key,dataURL); 
+        } else {
+            ICON_CACHE.delete(key);
+        }
+        return dataURL; 
     } catch (error) {
         console.error(`[${Date.now()}] Error in getItemIconDataURLForItem:`, error);
         return '';
@@ -638,18 +747,35 @@ function determinePhysicalDamageTypeFromSubtype(subtype) {
 window.normalizeItem = function(item) {
     if (!item) return null;
     
-    // Ensure all required properties exist
-    const normalized = {
-        id: item.id || window.randId(),
-        name: item.name || 'Unknown Item',
-        type: item.type || 'unknown',
-        rarity: item.rarity || 'Common',
-        short: item.short || item.name || 'An item',
-        value: item.value || 0,
-        icon: null, // Will be generated below
-        stats: item.stats || {},
-        level: item.level || 1
-    };
+    // Start with a copy of the original item to preserve all properties (including locked and weaponSprite)
+    const normalized = { ...item };
+    
+    // Preserve weaponSprite and weaponSpriteType if they exist - these must be consistent
+    const existingWeaponSprite = item.weaponSprite;
+    const existingWeaponSpriteType = item.weaponSpriteType;
+    
+    // Ensure all required properties exist (override if missing, but preserve existing values)
+    normalized.id = normalized.id || window.randId();
+    normalized.name = normalized.name || 'Unknown Item';
+    normalized.type = normalized.type || 'unknown';
+    normalized.rarity = normalized.rarity || 'Common';
+    normalized.short = normalized.short || normalized.name || 'An item';
+    normalized.value = normalized.value || 0;
+    normalized.icon = normalized.icon || null; // Will be generated below if needed
+    normalized.stats = normalized.stats || {};
+    normalized.level = normalized.level || 1;
+    // Preserve lock status explicitly - convert to boolean if needed
+    // Handle string "true"/"false" cases and preserve boolean true
+    if ('locked' in normalized) {
+        if (normalized.locked === 'true' || normalized.locked === true) {
+            normalized.locked = true;
+        } else {
+            normalized.locked = false;
+        }
+    } else {
+        // Only set to false if property doesn't exist at all
+        normalized.locked = false;
+    }
     
     // Add type-specific properties
     if (item.type === 'weapon') {
@@ -687,11 +813,24 @@ window.normalizeItem = function(item) {
                 normalized.twoHanded = window.checkIfTwoHanded(normalized.subtype);
             } else {
                 // Fallback: check against known two-handed weapons
-                const twoHandedWeapons = ['Spear', 'Javelin', 'Trident', 'Pike', 'Staff', 'Halberd', 'Bow', 'Crossbow'];
-                normalized.twoHanded = twoHandedWeapons.includes(normalized.subtype);
+                normalized.twoHanded = TWO_HANDED_WEAPON_TYPES.includes(normalized.subtype);
             }
         } else if (normalized.twoHanded === undefined) {
             normalized.twoHanded = false; // Default to one-handed if can't determine
+        }
+        
+        // Ensure weapon sprite is determined and stored for consistency across all rendering contexts
+        // This ensures ground drops, inventory icons, and equipped weapons all use the same sprite
+        // Always restore existing sprite if it was present, otherwise determine it now
+        if (existingWeaponSprite && existingWeaponSpriteType) {
+            // Preserve existing sprite to maintain consistency
+            normalized.weaponSprite = existingWeaponSprite;
+            normalized.weaponSpriteType = existingWeaponSpriteType;
+        } else if (!normalized.weaponSprite && normalized.subtype && typeof window.loadWeaponImage === 'function') {
+            // Determine the sprite immediately so it's consistent
+            const weaponKind = normalized.subtype || window.weaponKindFromName(normalized.name) || 'Sword';
+            window.loadWeaponImage(weaponKind, normalized);
+            // loadWeaponImage will set normalized.weaponSprite and normalized.weaponSpriteType
         }
     } else if (item.type === 'armor') {
         normalized.slot = item.slot || 'chest';
@@ -930,6 +1069,683 @@ window.drawNPCBody = function(ctx, x, y, colors, animIndex=0, isMoving=false) {
     } 
     
          // Random accessory details removed to prevent flashing
+};
+
+// Water Wisp sprite cache
+const WATER_WISP_SPRITES = {
+    idle: [],
+    move: [],
+    attack: [],
+    hurt: [],
+    die: []
+};
+
+// Load Water Wisp sprites
+function loadWaterWispSprites() {
+    const basePath = 'assets/Water Wisp/Individual Sprites/';
+    
+    // Clear existing sprites
+    WATER_WISP_SPRITES.idle = [];
+    WATER_WISP_SPRITES.move = [];
+    WATER_WISP_SPRITES.attack = [];
+    WATER_WISP_SPRITES.hurt = [];
+    WATER_WISP_SPRITES.die = [];
+    
+    // Load idle sprites (4 frames)
+    for (let i = 0; i < 4; i++) {
+        const img = new Image();
+        img.src = `${basePath}water-idle-${String(i).padStart(2, '0')}.png`;
+        WATER_WISP_SPRITES.idle.push(img);
+    }
+    
+    // Load move sprites (4 frames)
+    for (let i = 0; i < 4; i++) {
+        const img = new Image();
+        img.src = `${basePath}water-move-${String(i).padStart(2, '0')}.png`;
+        WATER_WISP_SPRITES.move.push(img);
+    }
+    
+    // Load attack sprites (10 frames)
+    for (let i = 0; i < 10; i++) {
+        const img = new Image();
+        img.src = `${basePath}water-attack-${String(i).padStart(2, '0')}.png`;
+        WATER_WISP_SPRITES.attack.push(img);
+    }
+    
+    // Load hurt sprites (3 frames)
+    for (let i = 0; i < 3; i++) {
+        const img = new Image();
+        img.src = `${basePath}water-hurt-${String(i).padStart(2, '0')}.png`;
+        WATER_WISP_SPRITES.hurt.push(img);
+    }
+    
+    // Load die sprites (7 frames)
+    for (let i = 0; i < 7; i++) {
+        const img = new Image();
+        img.src = `${basePath}water-die-${String(i).padStart(2, '0')}.png`;
+        WATER_WISP_SPRITES.die.push(img);
+    }
+}
+
+// Initialize sprite loading on page load
+if (typeof window !== 'undefined') {
+    window.addEventListener('load', loadWaterWispSprites);
+}
+
+// Fire Wisp sprite storage
+const FIRE_WISP_SPRITES = {
+    idle: [],
+    move: [],
+    attack: [],
+    hurt: [],
+    die: []
+};
+
+// Load Fire Wisp sprites
+function loadFireWispSprites() {
+    const basePath = 'assets/Fire Wisp/Individual Sprites/';
+    
+    // Clear existing sprites
+    FIRE_WISP_SPRITES.idle = [];
+    FIRE_WISP_SPRITES.move = [];
+    FIRE_WISP_SPRITES.attack = [];
+    FIRE_WISP_SPRITES.hurt = [];
+    FIRE_WISP_SPRITES.die = [];
+    
+    // Load idle sprites (4 frames)
+    for (let i = 0; i < 4; i++) {
+        const img = new Image();
+        img.src = `${basePath}fire-idle-${String(i).padStart(2, '0')}.png`;
+        FIRE_WISP_SPRITES.idle.push(img);
+    }
+    
+    // Load move sprites (4 frames)
+    for (let i = 0; i < 4; i++) {
+        const img = new Image();
+        img.src = `${basePath}fire-move-${String(i).padStart(2, '0')}.png`;
+        FIRE_WISP_SPRITES.move.push(img);
+    }
+    
+    // Load attack sprites (10 frames)
+    for (let i = 0; i < 10; i++) {
+        const img = new Image();
+        img.src = `${basePath}fire-attack-${String(i).padStart(2, '0')}.png`;
+        FIRE_WISP_SPRITES.attack.push(img);
+    }
+    
+    // Load hurt sprites (3 frames)
+    for (let i = 0; i < 3; i++) {
+        const img = new Image();
+        img.src = `${basePath}fire-hurt-${String(i).padStart(2, '0')}.png`;
+        FIRE_WISP_SPRITES.hurt.push(img);
+    }
+    
+    // Load die sprites (7 frames)
+    for (let i = 0; i < 7; i++) {
+        const img = new Image();
+        img.src = `${basePath}fire-die-${String(i).padStart(2, '0')}.png`;
+        FIRE_WISP_SPRITES.die.push(img);
+    }
+}
+
+// Initialize sprite loading on page load
+if (typeof window !== 'undefined') {
+    window.addEventListener('load', loadFireWispSprites);
+}
+
+// Earth Wisp sprite storage
+const EARTH_WISP_SPRITES = {
+    idle: [],
+    move: [],
+    attack: [],
+    hurt: [],
+    die: []
+};
+
+// Load Earth Wisp sprites
+function loadEarthWispSprites() {
+    const basePath = 'assets/Earth Wisp/Individual Sprite/';
+    
+    // Clear existing sprites
+    EARTH_WISP_SPRITES.idle = [];
+    EARTH_WISP_SPRITES.move = [];
+    EARTH_WISP_SPRITES.attack = [];
+    EARTH_WISP_SPRITES.hurt = [];
+    EARTH_WISP_SPRITES.die = [];
+    
+    // Load idle sprites (4 frames)
+    for (let i = 0; i < 4; i++) {
+        const img = new Image();
+        img.src = `${basePath}earth-idle-${String(i).padStart(2, '0')}.png`;
+        EARTH_WISP_SPRITES.idle.push(img);
+    }
+    
+    // Load move sprites (4 frames)
+    for (let i = 0; i < 4; i++) {
+        const img = new Image();
+        img.src = `${basePath}earth-move-${String(i).padStart(2, '0')}.png`;
+        EARTH_WISP_SPRITES.move.push(img);
+    }
+    
+    // Load attack sprites (10 frames)
+    for (let i = 0; i < 10; i++) {
+        const img = new Image();
+        img.src = `${basePath}earth-attack-${String(i).padStart(2, '0')}.png`;
+        EARTH_WISP_SPRITES.attack.push(img);
+    }
+    
+    // Load hurt sprites (3 frames)
+    for (let i = 0; i < 3; i++) {
+        const img = new Image();
+        img.src = `${basePath}earth-hurt-${String(i).padStart(2, '0')}.png`;
+        EARTH_WISP_SPRITES.hurt.push(img);
+    }
+    
+    // Load die sprites (7 frames)
+    for (let i = 0; i < 7; i++) {
+        const img = new Image();
+        img.src = `${basePath}earth-die-${String(i).padStart(2, '0')}.png`;
+        EARTH_WISP_SPRITES.die.push(img);
+    }
+}
+
+// Initialize sprite loading on page load
+if (typeof window !== 'undefined') {
+    window.addEventListener('load', loadEarthWispSprites);
+}
+
+// Wind Wisp sprite storage
+const WIND_WISP_SPRITES = {
+    idle: [],
+    move: [],
+    attack: [],
+    hurt: [],
+    die: []
+};
+
+// Load Wind Wisp sprites
+function loadWindWispSprites() {
+    const basePath = 'assets/Wind Wisp/Individual Sprites/';
+    
+    // Clear existing sprites
+    WIND_WISP_SPRITES.idle = [];
+    WIND_WISP_SPRITES.move = [];
+    WIND_WISP_SPRITES.attack = [];
+    WIND_WISP_SPRITES.hurt = [];
+    WIND_WISP_SPRITES.die = [];
+    
+    // Load idle sprites (4 frames)
+    for (let i = 0; i < 4; i++) {
+        const img = new Image();
+        img.src = `${basePath}wind-idle-${String(i).padStart(2, '0')}.png`;
+        WIND_WISP_SPRITES.idle.push(img);
+    }
+    
+    // Load move sprites (4 frames)
+    for (let i = 0; i < 4; i++) {
+        const img = new Image();
+        img.src = `${basePath}wind-move-${String(i).padStart(2, '0')}.png`;
+        WIND_WISP_SPRITES.move.push(img);
+    }
+    
+    // Load attack sprites (10 frames)
+    for (let i = 0; i < 10; i++) {
+        const img = new Image();
+        img.src = `${basePath}wind-attack-${String(i).padStart(2, '0')}.png`;
+        WIND_WISP_SPRITES.attack.push(img);
+    }
+    
+    // Load hurt sprites (3 frames)
+    for (let i = 0; i < 3; i++) {
+        const img = new Image();
+        img.src = `${basePath}wind-hurt-${String(i).padStart(2, '0')}.png`;
+        WIND_WISP_SPRITES.hurt.push(img);
+    }
+    
+    // Load die sprites (7 frames)
+    for (let i = 0; i < 7; i++) {
+        const img = new Image();
+        img.src = `${basePath}wind-die-${String(i).padStart(2, '0')}.png`;
+        WIND_WISP_SPRITES.die.push(img);
+    }
+}
+
+// Initialize sprite loading on page load
+if (typeof window !== 'undefined') {
+    window.addEventListener('load', loadWindWispSprites);
+}
+
+// Draw Fire Wisp enemy with sprite animations
+window.drawFireWisp = function(ctx, enemy, dt) {
+    if (!enemy) return;
+    
+    const x = enemy.x || 0;
+    const y = enemy.y || 0;
+    const w = enemy.w || 32;
+    const h = enemy.h || 48;
+    
+    // Determine animation state
+    let state = 'idle';
+    let frameIndex = 0;
+    // Animation speeds (doubled speed - halved time per frame)
+    const idleAnimSpeed = 0.25; // Time per frame for idle (seconds)
+    const moveAnimSpeed = 0.15; // Time per frame for move (seconds)
+    const attackAnimSpeed = 0.025; // Time per frame for attack (seconds)
+    const hurtAnimSpeed = 0.05; // Time per frame for hurt (seconds)
+    const dieAnimSpeed = 0.075; // Time per frame for die (seconds)
+    
+    // Check if enemy is dead
+    if (enemy.health <= 0 || enemy.isDead || enemy.dead) {
+        state = 'die';
+        // Use die animation progress from server (don't update it client-side)
+        // Server is authoritative for dieAnimProgress
+        if (enemy.dieAnimProgress === undefined) {
+            enemy.dieAnimProgress = 0;
+        }
+        // Don't increment dieAnimProgress client-side - server handles this
+        const dieFrames = FIRE_WISP_SPRITES.die.length;
+        frameIndex = Math.min(Math.floor(enemy.dieAnimProgress / dieAnimSpeed), dieFrames - 1);
+    }
+    // Check if enemy is hurt (recently took damage)
+    else if (enemy.hurtAnimTime && enemy.hurtAnimTime > 0) {
+        state = 'hurt';
+        const hurtFrames = FIRE_WISP_SPRITES.hurt.length;
+        const progress = 1 - (enemy.hurtAnimTime / 0.3); // 0.3 second hurt animation
+        frameIndex = Math.min(Math.floor(progress * hurtFrames), hurtFrames - 1);
+    }
+    // Check if enemy is attacking
+    else if (enemy.attackAnimTime && enemy.attackAnimTime > 0) {
+        state = 'attack';
+        const attackFrames = FIRE_WISP_SPRITES.attack.length;
+        const progress = 1 - (enemy.attackAnimTime / 0.5); // 0.5 second attack animation
+        frameIndex = Math.min(Math.floor(progress * attackFrames), attackFrames - 1);
+    }
+    // Check if enemy is moving
+    else if (Math.abs(enemy.vx || 0) > 5) {
+        state = 'move';
+        // Animate move frames based on time
+        if (!enemy.moveAnimTime) enemy.moveAnimTime = 0;
+        enemy.moveAnimTime += dt;
+        const moveFrames = FIRE_WISP_SPRITES.move.length;
+        frameIndex = Math.floor((enemy.moveAnimTime / moveAnimSpeed) % moveFrames);
+    }
+    // Otherwise idle
+    else {
+        state = 'idle';
+        // Animate idle frames based on time
+        if (!enemy.idleAnimTime) enemy.idleAnimTime = 0;
+        enemy.idleAnimTime += dt;
+        const idleFrames = FIRE_WISP_SPRITES.idle.length;
+        frameIndex = Math.floor((enemy.idleAnimTime / idleAnimSpeed) % idleFrames);
+    }
+    
+    // Get the sprite for current state and frame
+    const sprites = FIRE_WISP_SPRITES[state];
+    if (!sprites || !sprites[frameIndex]) {
+        // Fallback: draw a simple rectangle if sprite not loaded
+        ctx.fillStyle = '#ff4a4a';
+        ctx.fillRect(x, y, w, h);
+        return;
+    }
+    
+    const sprite = sprites[frameIndex];
+    
+    // Wait for image to load before drawing
+    if (!sprite.complete || sprite.naturalWidth === 0) {
+        // Image not loaded yet, draw placeholder
+        ctx.fillStyle = '#ff4a4a';
+        ctx.fillRect(x, y, 32, 48);
+        return;
+    }
+    
+    // Use original image dimensions (no scaling)
+    const spriteWidth = sprite.naturalWidth;
+    const spriteHeight = sprite.naturalHeight;
+    
+    // Determine if we should flip horizontally (for facing right)
+    const flip = enemy.facing === 'right' || (enemy.facing === undefined && (enemy.vx || 0) > 0);
+    
+    // Draw the sprite at original size
+    ctx.save();
+    
+    if (flip) {
+        // Flip horizontally for right-facing (all states: idle, move, attack, hurt, die)
+        ctx.translate(x + spriteWidth, y);
+        ctx.scale(-1, 1);
+        ctx.drawImage(sprite, 0, 0, spriteWidth, spriteHeight, 0, 0, spriteWidth, spriteHeight);
+    } else {
+        // Draw normally (left-facing) at original size
+        ctx.drawImage(sprite, 0, 0, spriteWidth, spriteHeight, x, y, spriteWidth, spriteHeight);
+    }
+    
+    ctx.restore();
+};
+
+// Draw Earth Wisp enemy with sprite animations
+window.drawEarthWisp = function(ctx, enemy, dt) {
+    if (!enemy) return;
+    
+    const x = enemy.x || 0;
+    const y = enemy.y || 0;
+    const w = enemy.w || 32;
+    const h = enemy.h || 48;
+    
+    // Determine animation state
+    let state = 'idle';
+    let frameIndex = 0;
+    // Animation speeds (doubled speed - halved time per frame)
+    const idleAnimSpeed = 0.25; // Time per frame for idle (seconds)
+    const moveAnimSpeed = 0.15; // Time per frame for move (seconds)
+    const attackAnimSpeed = 0.025; // Time per frame for attack (seconds)
+    const hurtAnimSpeed = 0.05; // Time per frame for hurt (seconds)
+    const dieAnimSpeed = 0.075; // Time per frame for die (seconds)
+    
+    // Check if enemy is dead
+    if (enemy.health <= 0 || enemy.isDead || enemy.dead) {
+        state = 'die';
+        // Use die animation progress from server (don't update it client-side)
+        // Server is authoritative for dieAnimProgress
+        if (enemy.dieAnimProgress === undefined) {
+            enemy.dieAnimProgress = 0;
+        }
+        // Don't increment dieAnimProgress client-side - server handles this
+        const dieFrames = EARTH_WISP_SPRITES.die.length;
+        frameIndex = Math.min(Math.floor(enemy.dieAnimProgress / dieAnimSpeed), dieFrames - 1);
+    }
+    // Check if enemy is hurt (recently took damage)
+    else if (enemy.hurtAnimTime && enemy.hurtAnimTime > 0) {
+        state = 'hurt';
+        const hurtFrames = EARTH_WISP_SPRITES.hurt.length;
+        const progress = 1 - (enemy.hurtAnimTime / 0.3); // 0.3 second hurt animation
+        frameIndex = Math.min(Math.floor(progress * hurtFrames), hurtFrames - 1);
+    }
+    // Check if enemy is attacking
+    else if (enemy.attackAnimTime && enemy.attackAnimTime > 0) {
+        state = 'attack';
+        const attackFrames = EARTH_WISP_SPRITES.attack.length;
+        const progress = 1 - (enemy.attackAnimTime / 0.5); // 0.5 second attack animation
+        frameIndex = Math.min(Math.floor(progress * attackFrames), attackFrames - 1);
+    }
+    // Check if enemy is moving
+    else if (Math.abs(enemy.vx || 0) > 5) {
+        state = 'move';
+        // Animate move frames based on time
+        if (!enemy.moveAnimTime) enemy.moveAnimTime = 0;
+        enemy.moveAnimTime += dt;
+        const moveFrames = EARTH_WISP_SPRITES.move.length;
+        frameIndex = Math.floor((enemy.moveAnimTime / moveAnimSpeed) % moveFrames);
+    }
+    // Otherwise idle
+    else {
+        state = 'idle';
+        // Animate idle frames based on time
+        if (!enemy.idleAnimTime) enemy.idleAnimTime = 0;
+        enemy.idleAnimTime += dt;
+        const idleFrames = EARTH_WISP_SPRITES.idle.length;
+        frameIndex = Math.floor((enemy.idleAnimTime / idleAnimSpeed) % idleFrames);
+    }
+    
+    // Get the sprite for current state and frame
+    const sprites = EARTH_WISP_SPRITES[state];
+    if (!sprites || !sprites[frameIndex]) {
+        // Fallback: draw a simple rectangle if sprite not loaded
+        ctx.fillStyle = '#8b7355';
+        ctx.fillRect(x, y, w, h);
+        return;
+    }
+    
+    const sprite = sprites[frameIndex];
+    
+    // Wait for image to load before drawing
+    if (!sprite.complete || sprite.naturalWidth === 0) {
+        // Image not loaded yet, draw placeholder
+        ctx.fillStyle = '#8b7355';
+        ctx.fillRect(x, y, 32, 48);
+        return;
+    }
+    
+    // Use original image dimensions (no scaling)
+    const spriteWidth = sprite.naturalWidth;
+    const spriteHeight = sprite.naturalHeight;
+    
+    // Determine if we should flip horizontally (for facing right)
+    const flip = enemy.facing === 'right' || (enemy.facing === undefined && (enemy.vx || 0) > 0);
+    
+    // Draw the sprite at original size
+    ctx.save();
+    
+    if (flip) {
+        // Flip horizontally for right-facing (all states: idle, move, attack, hurt, die)
+        ctx.translate(x + spriteWidth, y);
+        ctx.scale(-1, 1);
+        ctx.drawImage(sprite, 0, 0, spriteWidth, spriteHeight, 0, 0, spriteWidth, spriteHeight);
+    } else {
+        // Draw normally (left-facing) at original size
+        ctx.drawImage(sprite, 0, 0, spriteWidth, spriteHeight, x, y, spriteWidth, spriteHeight);
+    }
+    
+    ctx.restore();
+};
+
+// Draw Wind Wisp enemy with sprite animations
+window.drawWindWisp = function(ctx, enemy, dt) {
+    if (!enemy) return;
+    
+    const x = enemy.x || 0;
+    const y = enemy.y || 0;
+    const w = enemy.w || 32;
+    const h = enemy.h || 48;
+    
+    // Determine animation state
+    let state = 'idle';
+    let frameIndex = 0;
+    // Animation speeds (doubled speed - halved time per frame)
+    const idleAnimSpeed = 0.25; // Time per frame for idle (seconds)
+    const moveAnimSpeed = 0.15; // Time per frame for move (seconds)
+    const attackAnimSpeed = 0.025; // Time per frame for attack (seconds)
+    const hurtAnimSpeed = 0.05; // Time per frame for hurt (seconds)
+    const dieAnimSpeed = 0.075; // Time per frame for die (seconds)
+    
+    // Check if enemy is dead
+    if (enemy.health <= 0 || enemy.isDead || enemy.dead) {
+        state = 'die';
+        // Use die animation progress from server (don't update it client-side)
+        // Server is authoritative for dieAnimProgress
+        if (enemy.dieAnimProgress === undefined) {
+            enemy.dieAnimProgress = 0;
+        }
+        // Don't increment dieAnimProgress client-side - server handles this
+        const dieFrames = WIND_WISP_SPRITES.die.length;
+        frameIndex = Math.min(Math.floor(enemy.dieAnimProgress / dieAnimSpeed), dieFrames - 1);
+    }
+    // Check if enemy is hurt (recently took damage)
+    else if (enemy.hurtAnimTime && enemy.hurtAnimTime > 0) {
+        state = 'hurt';
+        const hurtFrames = WIND_WISP_SPRITES.hurt.length;
+        const progress = 1 - (enemy.hurtAnimTime / 0.3); // 0.3 second hurt animation
+        frameIndex = Math.min(Math.floor(progress * hurtFrames), hurtFrames - 1);
+    }
+    // Check if enemy is attacking
+    else if (enemy.attackAnimTime && enemy.attackAnimTime > 0) {
+        state = 'attack';
+        const attackFrames = WIND_WISP_SPRITES.attack.length;
+        const progress = 1 - (enemy.attackAnimTime / 0.5); // 0.5 second attack animation
+        frameIndex = Math.min(Math.floor(progress * attackFrames), attackFrames - 1);
+    }
+    // Check if enemy is moving
+    else if (Math.abs(enemy.vx || 0) > 5) {
+        state = 'move';
+        // Animate move frames based on time
+        if (!enemy.moveAnimTime) enemy.moveAnimTime = 0;
+        enemy.moveAnimTime += dt;
+        const moveFrames = WIND_WISP_SPRITES.move.length;
+        frameIndex = Math.floor((enemy.moveAnimTime / moveAnimSpeed) % moveFrames);
+    }
+    // Otherwise idle
+    else {
+        state = 'idle';
+        // Animate idle frames based on time
+        if (!enemy.idleAnimTime) enemy.idleAnimTime = 0;
+        enemy.idleAnimTime += dt;
+        const idleFrames = WIND_WISP_SPRITES.idle.length;
+        frameIndex = Math.floor((enemy.idleAnimTime / idleAnimSpeed) % idleFrames);
+    }
+    
+    // Get the sprite for current state and frame
+    const sprites = WIND_WISP_SPRITES[state];
+    if (!sprites || !sprites[frameIndex]) {
+        // Fallback: draw a simple rectangle if sprite not loaded
+        ctx.fillStyle = '#87ceeb';
+        ctx.fillRect(x, y, w, h);
+        return;
+    }
+    
+    const sprite = sprites[frameIndex];
+    
+    // Wait for image to load before drawing
+    if (!sprite.complete || sprite.naturalWidth === 0) {
+        // Image not loaded yet, draw placeholder
+        ctx.fillStyle = '#87ceeb';
+        ctx.fillRect(x, y, 32, 48);
+        return;
+    }
+    
+    // Use original image dimensions (no scaling)
+    const spriteWidth = sprite.naturalWidth;
+    const spriteHeight = sprite.naturalHeight;
+    
+    // Determine if we should flip horizontally (for facing right)
+    const flip = enemy.facing === 'right' || (enemy.facing === undefined && (enemy.vx || 0) > 0);
+    
+    // Draw the sprite at original size
+    ctx.save();
+    
+    if (flip) {
+        // Flip horizontally for right-facing (all states: idle, move, attack, hurt, die)
+        ctx.translate(x + spriteWidth, y);
+        ctx.scale(-1, 1);
+        ctx.drawImage(sprite, 0, 0, spriteWidth, spriteHeight, 0, 0, spriteWidth, spriteHeight);
+    } else {
+        // Draw normally (left-facing) at original size
+        ctx.drawImage(sprite, 0, 0, spriteWidth, spriteHeight, x, y, spriteWidth, spriteHeight);
+    }
+    
+    ctx.restore();
+};
+
+// Draw Water Wisp enemy with sprite animations
+window.drawWaterWisp = function(ctx, enemy, dt) {
+    if (!enemy) return;
+    
+    const x = enemy.x || 0;
+    const y = enemy.y || 0;
+    const w = enemy.w || 32;
+    const h = enemy.h || 48;
+    
+    // Determine animation state
+    let state = 'idle';
+    let frameIndex = 0;
+    // Animation speeds (doubled speed - halved time per frame)
+    const idleAnimSpeed = 0.25; // Time per frame for idle (seconds)
+    const moveAnimSpeed = 0.15; // Time per frame for move (seconds)
+    const attackAnimSpeed = 0.025; // Time per frame for attack (seconds)
+    const hurtAnimSpeed = 0.05; // Time per frame for hurt (seconds)
+    const dieAnimSpeed = 0.075; // Time per frame for die (seconds)
+    
+    // Check if enemy is dead
+    if (enemy.health <= 0 || enemy.isDead || enemy.dead) {
+        state = 'die';
+        // Use die animation progress from server (don't update it client-side)
+        // Server is authoritative for dieAnimProgress
+        if (enemy.dieAnimProgress === undefined) {
+            enemy.dieAnimProgress = 0;
+        }
+        // Don't increment dieAnimProgress client-side - server handles this
+        const dieFrames = WATER_WISP_SPRITES.die.length;
+        frameIndex = Math.min(Math.floor(enemy.dieAnimProgress / dieAnimSpeed), dieFrames - 1);
+    }
+    // Check if enemy is hurt (recently took damage)
+    else if (enemy.hurtAnimTime && enemy.hurtAnimTime > 0) {
+        state = 'hurt';
+        const hurtFrames = WATER_WISP_SPRITES.hurt.length;
+        const progress = 1 - (enemy.hurtAnimTime / 0.3); // 0.3 second hurt animation
+        frameIndex = Math.min(Math.floor(progress * hurtFrames), hurtFrames - 1);
+    }
+    // Check if enemy is attacking
+    else if (enemy.attackAnimTime && enemy.attackAnimTime > 0) {
+        state = 'attack';
+        const attackFrames = WATER_WISP_SPRITES.attack.length;
+        const progress = 1 - (enemy.attackAnimTime / 0.5); // 0.5 second attack animation
+        frameIndex = Math.min(Math.floor(progress * attackFrames), attackFrames - 1);
+    }
+    // Check if enemy is moving
+    else if (Math.abs(enemy.vx || 0) > 5) {
+        state = 'move';
+        // Animate move frames based on time
+        if (!enemy.moveAnimTime) enemy.moveAnimTime = 0;
+        enemy.moveAnimTime += dt;
+        const moveFrames = WATER_WISP_SPRITES.move.length;
+        frameIndex = Math.floor((enemy.moveAnimTime / moveAnimSpeed) % moveFrames);
+    }
+    // Otherwise idle
+    else {
+        state = 'idle';
+        // Animate idle frames based on time
+        if (!enemy.idleAnimTime) enemy.idleAnimTime = 0;
+        enemy.idleAnimTime += dt;
+        const idleFrames = WATER_WISP_SPRITES.idle.length;
+        frameIndex = Math.floor((enemy.idleAnimTime / idleAnimSpeed) % idleFrames);
+    }
+    
+    // Get the sprite for current state and frame
+    const sprites = WATER_WISP_SPRITES[state];
+    if (!sprites || !sprites[frameIndex]) {
+        // Fallback: draw a simple rectangle if sprite not loaded
+        ctx.fillStyle = '#4aa3ff';
+        ctx.fillRect(x, y, w, h);
+        return;
+    }
+    
+    const sprite = sprites[frameIndex];
+    
+    // Wait for image to load before drawing
+    if (!sprite.complete || sprite.naturalWidth === 0) {
+        // Image not loaded yet, draw placeholder
+        ctx.fillStyle = '#4aa3ff';
+        ctx.fillRect(x, y, 32, 48);
+        return;
+    }
+    
+    // Use original image dimensions (no scaling)
+    const spriteWidth = sprite.naturalWidth;
+    const spriteHeight = sprite.naturalHeight;
+    
+    // Determine if we should flip horizontally (for facing right)
+    const flip = enemy.facing === 'right' || (enemy.facing === undefined && (enemy.vx || 0) > 0);
+    
+    // Draw the sprite at original size
+    ctx.save();
+    
+    if (flip) {
+        // Flip horizontally for right-facing (all states: idle, move, attack, hurt, die)
+        ctx.translate(x + spriteWidth, y);
+        ctx.scale(-1, 1);
+        ctx.drawImage(sprite, 0, 0, spriteWidth, spriteHeight, 0, 0, spriteWidth, spriteHeight);
+    } else {
+        // Draw normally (left-facing) at original size
+        ctx.drawImage(sprite, 0, 0, spriteWidth, spriteHeight, x, y, spriteWidth, spriteHeight);
+    }
+    
+    ctx.restore();
+    
+    // Draw damage flash overlay if taking damage (use actual sprite dimensions)
+    if (enemy.damageFlashTimer && enemy.damageFlashTimer > 0) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+        ctx.fillRect(x, y, spriteWidth, spriteHeight);
+        ctx.restore();
+    }
 };
   
      function drawBody(kind,idx){ 
@@ -1290,7 +2106,7 @@ window.drawLegs=function(ctx,x,y,it){
 }
 
 // Draw all equipment for a character (for both player and other players)
-window.drawAllEquipment=function(ctx,x,y,equip,isPlayer=false,flip=false){
+window.drawAllEquipment=function(ctx,x,y,equip,isPlayer=false,flip=false,swingAngle=0){
     if(!equip) return;
     
     // Draw equipment in proper order (underneath to on top)
@@ -1316,11 +2132,11 @@ window.drawAllEquipment=function(ctx,x,y,equip,isPlayer=false,flip=false){
         
         // Only draw offhand if it's a different weapon and mainhand is not two-handed
         if (!isSameWeapon && !isMainhandTwoHanded) {
-            window.drawWeapon(ctx,x,y,flip,equip.offhand,0,equip,'offhand');
+            window.drawWeapon(ctx,x,y,flip,equip.offhand,swingAngle,equip,'offhand');
         }
     } else if(equip.offhand) {
         // No mainhand, so draw offhand normally
-        window.drawWeapon(ctx,x,y,flip,equip.offhand,0,equip,'offhand');
+        window.drawWeapon(ctx,x,y,flip,equip.offhand,swingAngle,equip,'offhand');
     }
 }
 
@@ -1442,16 +2258,13 @@ window.drawWeapon=function(ctx,x,y,flip,it,angle=0,equip=null,slotHint=null){
     const weaponImg = loadWeaponImage(kind, it);
     
     if (weaponImg && weaponImg.complete && weaponImg.naturalWidth > 0) {
-        // Image is loaded, calculate dimensions
+        // Image is loaded, use original dimensions (no scaling)
         const imgWidth = weaponImg.naturalWidth;
         const imgHeight = weaponImg.naturalHeight;
         
-        // Scale image to match weapon length
-        // Use the longer dimension to determine scale
-        const maxDim = Math.max(imgWidth, imgHeight);
-        const scale = weaponLength / maxDim;
-        scaledWidth = imgWidth * scale;
-        scaledHeight = imgHeight * scale;
+        // Use original image dimensions - no scaling applied
+        scaledWidth = imgWidth;
+        scaledHeight = imgHeight;
     } else {
         // Fallback height for rectangle weapons
         scaledHeight = 4;
@@ -1482,15 +2295,11 @@ window.drawWeapon=function(ctx,x,y,flip,it,angle=0,equip=null,slotHint=null){
         const mainhandKind = weaponKindFromName(equip.mainhand.name) || equip.mainhand.subtype;
         const mainhandImg = loadWeaponImage(mainhandKind, equip.mainhand);
         if (mainhandImg && mainhandImg.complete && mainhandImg.naturalWidth > 0) {
-            const mainhandImgWidth = mainhandImg.naturalWidth;
-            const mainhandImgHeight = mainhandImg.naturalHeight;
-            const mainhandMaxDim = Math.max(mainhandImgWidth, mainhandImgHeight);
-            const mainhandScale = mainhandWeaponLength / mainhandMaxDim;
-            mainhandImageHeight = mainhandImgHeight * mainhandScale;
+            // Use original image height - no scaling
+            mainhandImageHeight = mainhandImg.naturalHeight;
         } else {
             // Image not loaded or not available, use a reasonable estimate
-            // Use a percentage of weapon length or a minimum height
-            mainhandImageHeight = Math.max(mainhandWeaponLength * 0.3, 20);
+            mainhandImageHeight = 20;
         }
     }
     
@@ -1512,14 +2321,14 @@ window.drawWeapon=function(ctx,x,y,flip,it,angle=0,equip=null,slotHint=null){
         // So x=0 is the right edge in world coordinates
         // We want weapons' right edges at player's left edge, but extend further left
         // In flipped coords, player's left edge is at x=W (which is x=48)
-        // To move weapons 5 pixels to the right in world, decrease x in flipped coords
-        // (smaller x in flipped coords = further right in world)
-        px = W + 15; // Position further left of player's left edge, moved 5px right
+        // To move weapons closer to the player, decrease x in flipped coords
+        // (smaller x in flipped coords = further right in world = closer to player)
+        px = W - 6; // Position 6 pixels closer to player (moved from W-3 to W-6)
     } else {
         // Player facing right: normal coordinate system, x is left edge of character
         // We want weapons' left edges at player's right edge (x+W)
-        // Move weapons 5 more pixels to the right (increase px by 5)
-        px = x + W - 5; // Position 5 pixels to the right of previous position
+        // Move weapons closer to the player (reduced from -5 to -10)
+        px = x + W - 10; // Position 10 pixels to the left of right edge (5 pixels closer)
     }
     
     // Vertical positioning: mainhand is above, offhand is below by mainhand height
@@ -1547,12 +2356,10 @@ window.drawWeapon=function(ctx,x,y,flip,it,angle=0,equip=null,slotHint=null){
         py = mainhandVerticalPos; // Move 16 pixels higher (decrease y)
     }
     
-    // Rotation origin should be at the weapon base (handle) closest to the player
-    // When facing right: weapon extends right from base, base is at 0, tip is at +weaponLength
-    // When facing left: weapon extends left (negative width), base is at 0 (closest to player), tip is at -weaponLength
-    
-    // Translate to weapon position
-    ctx.translate(px, py);
+    // Rotation origin should always be at the player position (where weapon attaches)
+    // Regardless of facing direction, rotation should begin from the player
+    // When facing right: weapon extends right from player, base is at 0
+    // When facing left: coordinate system is flipped, but base should still be at 0 relative to player
     
     // Note: The coordinate system is already flipped by drawCharacter if flip=true
     // When drawCharacter flips, it does: translate(X+W, Y), scale(-1, 1), then X=0, Y=0
@@ -1565,93 +2372,46 @@ window.drawWeapon=function(ctx,x,y,flip,it,angle=0,equip=null,slotHint=null){
     // When facing left (flip=true): image needs to be mirrored horizontally
     const needsImageMirror = flip; // Use player's facing direction directly
     
-    // Rotation origin: should always be at the base/handle (edge closest to player)
-    // Understanding the flipped coordinate system:
-    // - When flip=true, drawCharacter does: translate(X+W, Y); scale(-1, 1); X=0; Y=0
-    // - This flips the coordinate system horizontally
-    // - In the flipped coordinate system, x increases going left (in world coordinates)
-    // - Visually on screen, x=0 appears on the right side (player's right edge in world)
-    //
-    // When drawing with negative width in a flipped coordinate system:
-    // - Drawing from x=0 with width=-weaponLength extends from 0 to -weaponLength
-    // - In the flipped coords: 0 is on the right (closest to player) = BASE
-    // - -weaponLength is further left (away from player) = TIP
-    // - So rotation should be from 0 (the base/handle closest to player)
-    //
-    // The key insight: In a flipped coordinate system with negative width,
-    // the start position (0) is the RIGHT edge (base), and it extends LEFT to -weaponLength (tip)
+    // Rotation origin: should always be at 0 (the player position where weapon attaches)
+    // This is the same regardless of facing direction because:
+    // - When facing right: 0 is the left edge of weapon (base/handle at player)
+    // - When facing left: after coordinate flip, 0 is still the base/handle at player
+    // The key is that rotation always happens from the player's position (0)
     
-    const rotationOriginX = 0; // Base/handle is always at 0 (right edge, closest to player)
+    // Translate to weapon position first
+    ctx.translate(px, py);
     
-    // Translate to rotation origin (base/handle)
-    ctx.translate(rotationOriginX, 0);
-    
-    // Apply rotation at the base (rotation origin)
-    // When facing left, we need to reverse the rotation direction so it swings correctly
-    ctx.rotate(angle * (flip ? -1 : 1));
-    
-    // Translate back from rotation origin to drawing position
-    ctx.translate(-rotationOriginX, 0);
+    // Apply rotation at the weapon position (which is relative to player position)
+    // Both mainhand and offhand use the same swing angle, so they swing together
+    // The rotation angle should be the same regardless of facing direction
+    // When facing left, the coordinate system is flipped, so we don't need to reverse the angle
+    ctx.rotate(angle);
     
     // Draw weapon image if loaded
-    // When facing right: base at 0, tip at weaponLength (draw from 0 extending right)
-    // When facing left: need to ensure base (handle) is at rotation origin (0)
-    // 
-    // The issue: When using negative width, the image is mirrored, but the x coordinate
-    // is the LEFT edge of the image data (before mirroring). After mirroring with negative width,
-    // that left edge becomes the RIGHT edge visually. So if the handle is at the left edge of
-    // the image data, drawing from 0 with negative width puts the handle at 0 (correct).
-    // But if the handle is at the right edge of the image data, we need to draw from -weaponLength
-    // with positive width, so the handle (right edge) ends up at 0 after mirroring.
-    //
-    // Actually, wait - with negative width, the image is drawn from right to left.
-    // Drawing from x=0 with width=-w means: the RIGHT edge of the image data is at x=0,
-    // and it extends left to x=-w. So if the handle is at the right edge of the image data,
-    // it will be at x=0 (correct for rotation).
-    //
-    // But the user says it's still rotating from the wrong edge. Maybe the issue is that
-    // the weapon images have the handle at the left edge of the image data, not the right?
-    // In that case, we need to draw from weaponLength with positive width, so the handle
-    // (left edge of image data) ends up at 0 after the coordinate system flip.
-    //
-    // Let me try: draw from weaponLength with positive width when facing left
-    // This will position the left edge of the image data at weaponLength
-    // After the coordinate system flip, that left edge appears at the right side
-    // So if the handle is at the left edge of the image, it will be at the right edge visually
+    // Rotation is already applied at origin (0), so we just need to draw the image
+    // When facing right: draw from 0 (base/handle) extending right
+    // When facing left: need to offset so handle (left edge of image) aligns with rotation origin (0)
+    // The key: rotation happens at 0 (player position), then we draw the image
     if (weaponImg && weaponImg.complete && weaponImg.naturalWidth > 0) {
         if (needsImageMirror) {
-            // Facing left: draw from weaponLength with positive width
-            // This positions the left edge of image data at weaponLength
-            // After coordinate flip, left edge appears at right (closest to player)
-            // So if handle is at left edge of image data, it's at the right edge visually (correct)
-            // But we want rotation at 0, so we need to offset
-            // Actually, let's try drawing normally but offset so base is at 0
-            // If handle is at left edge of image: draw from 0 with positive width, but then offset
-            // Or: draw from -weaponLength with positive width, so left edge is at -weaponLength
-            // After flip, that appears at weaponLength (wrong)
-            //
-            // I think the correct approach: draw from 0 with negative width, but ensure
-            // the image's handle is at the rotation origin. The issue might be that we need
-            // to account for where the handle is in the source image.
-            // For now, let's try drawing from weaponLength with negative width, which puts
-            // the right edge of the image data at weaponLength, extending to 0
-            // Then the base (right edge) is at weaponLength, but we rotate from 0
-            // So we need to draw from 0 with negative width, but offset the image
-            ctx.drawImage(weaponImg, -weaponLength, -scaledHeight / 2, scaledWidth, scaledHeight);
+            // Facing left: draw with negative width to mirror the image
+            // When using negative width, the RIGHT edge of image data is at the x coordinate
+            // To get the handle (left edge of image) at 0, we need to draw from scaledWidth
+            // This positions: right edge at scaledWidth, left edge (handle) at 0
+            ctx.drawImage(weaponImg, scaledWidth, -scaledHeight / 2, -scaledWidth, scaledHeight);
         } else {
             // Facing right: normal orientation, draw extending right from base (0)
+            // Handle (left edge of image) is at 0, tip extends to scaledWidth
             ctx.drawImage(weaponImg, 0, -scaledHeight / 2, scaledWidth, scaledHeight);
         }
         imageDrawn = true;
     } else if (weaponImg && weaponImg.src && !weaponImg.complete) {
-        // Image is loading, draw a placeholder rectangle with proper edge alignment
+        // Image is loading, draw a placeholder rectangle
+        // Rotation is already applied, so draw from 0 (base) extending in the correct direction
         ctx.fillStyle = m.base;
         if (needsImageMirror) {
-            // Facing left: try drawing from -weaponLength with positive width
-            // This positions left edge at -weaponLength, extending to 0
-            // After flip, left edge appears at weaponLength, right edge at 0
-            // So base (right edge) would be at 0 (correct for rotation)
-            ctx.fillRect(-weaponLength, -2, weaponLength, 4);
+            // Facing left: draw from 0 extending left (negative width)
+            ctx.fillRect(0, -2, -weaponLength, 4);
         } else {
             // Facing right: draw from 0 (base) extending right to weaponLength (tip)
             ctx.fillRect(0, -2, weaponLength, 4);
@@ -1746,15 +2506,26 @@ window.drawWeapon=function(ctx,x,y,flip,it,angle=0,equip=null,slotHint=null){
         const particleCount = 8;
         const particleSpeed = 0.3;
         
-        // Determine effect positioning based on image mirror state
-        // When image is mirrored (needsImageMirror), we use negative coordinates
-        const effectStart = needsImageMirror ? -weaponLength : 0;
-        const effectEnd = needsImageMirror ? 0 : weaponLength;
+        // Determine effect positioning based on weapon image position
+        // When facing right: weapon image drawn from 0 (handle) to scaledWidth (tip)
+        // When facing left: weapon image drawn from scaledWidth to 0 with negative width
+        // After negative width mirroring: handle (left edge of image) is at 0, tip extends to -scaledWidth
+        // Effects should overlay exactly where the weapon image appears visually
+        // Use scaledWidth for image-based weapons, weaponLength for fallback
+        const weaponDisplayLength = (weaponImg && weaponImg.complete && weaponImg.naturalWidth > 0) ? scaledWidth : weaponLength;
+        
+        // Effects should match the weapon image visual position
+        // When facing right: effects from 0 (handle) to weaponDisplayLength (tip)
+        // When facing left: effects from 0 (handle) to -weaponDisplayLength (tip) - mirror the same way
+        const effectStart = 0; // Always at handle (rotation origin)
+        const effectEnd = needsImageMirror ? -weaponDisplayLength : weaponDisplayLength;
+        const effectLength = Math.abs(effectEnd - effectStart); // Calculate once for all effects
         
         if (elementalType === 'Fire') {
             // Fire effect - orange/red/yellow particles that flicker upward
             for (let i = 0; i < particleCount; i++) {
-                const offset = effectStart + (i / particleCount) * weaponLength;
+                // Calculate offset along the weapon - particles use positive offsets (effectLength)
+                const offset = effectStart + (i / particleCount) * effectLength;
                 const yOffset = (animTime * particleSpeed + i * 0.5) % 10;
                 const size = 2 + Math.sin(animTime * 0.1 + i) * 1;
                 
@@ -1775,13 +2546,17 @@ window.drawWeapon=function(ctx,x,y,flip,it,angle=0,equip=null,slotHint=null){
             ctx.shadowColor = '#ff4500';
             ctx.shadowBlur = 8;
             ctx.fillStyle = '#ff6347';
-            ctx.fillRect(effectStart, -3, weaponLength, 6);
+            // Draw glow along the weapon - match particle positioning exactly
+            // Particles use effectLength (always positive), and coordinate system is already flipped when facing left
+            // So glow should always use positive width to match particles
+            ctx.fillRect(effectStart, -scaledHeight / 2, effectLength, scaledHeight);
             ctx.shadowBlur = 0;
             ctx.globalAlpha = 1.0;
         } else if (elementalType === 'Acid') {
             // Acid effect - green bubbling particles
             for (let i = 0; i < particleCount; i++) {
-                const offset = effectStart + (i / particleCount) * weaponLength;
+                // Calculate offset along the weapon - particles use positive offsets (effectLength)
+                const offset = effectStart + (i / particleCount) * effectLength;
                 const yOffset = (Math.sin(animTime * 0.1 + i) * 3);
                 const size = 1.5 + Math.cos(animTime * 0.15 + i) * 0.8;
                 
@@ -1800,13 +2575,17 @@ window.drawWeapon=function(ctx,x,y,flip,it,angle=0,equip=null,slotHint=null){
             // Acid dripping effect
             ctx.globalAlpha = 0.5;
             ctx.fillStyle = '#32cd32';
-            ctx.fillRect(effectStart, -2.5, weaponLength, 5);
+            // Draw effect along the weapon - match particle positioning exactly
+            // Particles use effectLength (always positive), and coordinate system is already flipped when facing left
+            // So glow should always use positive width to match particles
+            ctx.fillRect(effectStart, -scaledHeight / 2, effectLength, scaledHeight);
             ctx.globalAlpha = 1.0;
         } else if (elementalType === 'Lightning') {
             // Lightning effect - blue/white crackling electricity
             const sparks = 12;
             for (let i = 0; i < sparks; i++) {
-                const offset = effectStart + (i / sparks) * weaponLength;
+                // Calculate offset along the weapon - particles use positive offsets (effectLength)
+                const offset = effectStart + (i / sparks) * effectLength;
                 const sparkOffset = (Math.sin(animTime * 0.3 + i * 0.5) * 4);
                 const sparkSize = 1 + (Math.sin(animTime * 0.2 + i * 0.7) * 0.5 + 0.5) * 2; // Deterministic size
                 
@@ -1829,6 +2608,7 @@ window.drawWeapon=function(ctx,x,y,flip,it,angle=0,equip=null,slotHint=null){
             ctx.strokeStyle = '#87ceeb';
             ctx.lineWidth = 2;
             ctx.beginPath();
+            // Draw line along weapon - from handle to tip
             ctx.moveTo(effectStart, 0);
             ctx.lineTo(effectEnd, 0);
             ctx.stroke();
@@ -1837,7 +2617,8 @@ window.drawWeapon=function(ctx,x,y,flip,it,angle=0,equip=null,slotHint=null){
         } else if (elementalType === 'Frost') {
             // Frost effect - blue/white ice crystals
             for (let i = 0; i < particleCount; i++) {
-                const offset = effectStart + (i / particleCount) * weaponLength;
+                // Calculate offset along the weapon - particles use positive offsets (effectLength)
+                const offset = effectStart + (i / particleCount) * effectLength;
                 const yOffset = (Math.cos(animTime * 0.08 + i * 0.7) * 2);
                 const size = 1.5 + Math.sin(animTime * 0.12 + i) * 0.8;
                 const rotation = animTime * 0.05 + i;
@@ -1873,7 +2654,10 @@ window.drawWeapon=function(ctx,x,y,flip,it,angle=0,equip=null,slotHint=null){
             ctx.shadowColor = '#b0e0e6';
             ctx.shadowBlur = 8;
             ctx.fillStyle = '#add8e6';
-            ctx.fillRect(effectStart, -3, weaponLength, 6);
+            // Draw glow along the weapon - match particle positioning exactly
+            // Particles use effectLength (always positive), and coordinate system is already flipped when facing left
+            // So glow should always use positive width to match particles
+            ctx.fillRect(effectStart, -scaledHeight / 2, effectLength, scaledHeight);
             ctx.shadowBlur = 0;
             ctx.globalAlpha = 1.0;
         }
@@ -2014,7 +2798,7 @@ window.spawnDrop = function (x, y, item, vx = 0, vy = 0) {
     x, y, vx, vy, item, pickRadius: 40, grounded: false, noPickup: 0.5 
   };
   // Default time-based guard too (either can be used by callers)
-  d.noPickupUntil = performance.now() + 500;
+  d.noPickupUntil = performance.now() + DROP_PICKUP_DELAY_MS;
   worldDrops.push(d);
   
   // Send drop to server if connected
@@ -2050,6 +2834,7 @@ window.Player=function(id,x,y,binds,color){
     this.stats=Object.assign({},this.baseStats); 
     this.maxHealth=this.stats.Health; 
     this.health=this.maxHealth; 
+    this.maxMana=this.stats.Mana;
     this.mana=this.stats.Mana; 
     this.jumpCount=0; 
     this.canWallJumpExtra=2; 
@@ -2100,6 +2885,28 @@ Player.prototype.applyEquipment=function(){
         if(newHealth > this.health) {
             this.health = newHealth;
         }
+    }
+    
+    // Update maxMana from stats.Mana (similar to maxHealth)
+    // Store old maxMana to preserve mana percentage if needed
+    const oldMaxMana = this.maxMana || s.Mana;
+    this.maxMana = Math.max(1, s.Mana);
+    
+    // Ensure mana is valid after maxMana changes
+    // If mana exceeds new maxMana, cap it. Otherwise preserve current mana.
+    if(this.mana !== undefined && this.mana > this.maxMana) {
+        this.mana = this.maxMana;
+    } else if(oldMaxMana > 0 && this.maxMana > oldMaxMana && this.mana !== undefined) {
+        // If maxMana increased, preserve mana percentage for better UX
+        const manaPercent = this.mana / oldMaxMana;
+        const newMana = Math.floor(this.maxMana * manaPercent);
+        // Only apply if it results in more mana (don't reduce mana when gaining better equipment)
+        if(newMana > this.mana) {
+            this.mana = newMana;
+        }
+    } else if(this.mana === undefined) {
+        // Initialize mana to maxMana if not set
+        this.mana = this.maxMana;
     }
     
     // Update weapon info when equipment changes
@@ -2378,9 +3185,12 @@ Player.prototype.calculateReach = function() {
 Player.prototype.performAttack=function(){ 
     // Check if we have a ranged weapon equipped
     if (window.equip && window.equip.mainhand) {
-        const weaponKind = window.weaponKindFromName(window.equip.mainhand.name);
+        // Try to get weapon kind from name first, then fall back to subtype
+        const weaponKind = window.weaponKindFromName(window.equip.mainhand.name) || 
+                          window.equip.mainhand.subtype ||
+                          (window.equip.mainhand.name ? window.equip.mainhand.name.split(' ')[0] : null);
         
-        if (weaponKind === 'Bow' || weaponKind === 'Wand') {
+        if (weaponKind === 'Bow' || weaponKind === 'Crossbow' || weaponKind === 'Wand') {
             // Ranged weapons shoot projectiles instead of melee attacks
             this.shootProjectile(weaponKind);
             return;
@@ -2407,8 +3217,8 @@ Player.prototype.shootProjectile = function(weaponType) {
     const baseDamage = 8 + (window.equip.mainhand ? window.equip.mainhand.level * 2 : 0);
     let damage = baseDamage;
     
-    if (weaponType === 'Bow') {
-        // Bow damage scales with Coordination
+    if (weaponType === 'Bow' || weaponType === 'Crossbow') {
+        // Bow and Crossbow damage scales with Coordination
         damage += (window.player.stats.Coordination - 5) * 1.5;
     } else if (weaponType === 'Wand') {
         // Wand damage scales with Focus
@@ -2416,12 +3226,14 @@ Player.prototype.shootProjectile = function(weaponType) {
     }
     
     // Send projectile creation message to server
-    window.wsSend({
+    const message = {
         type: 'shootProjectile',
         weaponType: weaponType,
         direction: window.player.facing > 0 ? 'right' : 'left',
         damage: Math.round(damage)
-    });
+    };
+    
+    window.wsSend(message);
     
     // Set a short cooldown for ranged attacks
     this.attackCooldown = Math.max(0.3, 0.5 - (this.stats.Quickness - 5) * 0.01);
@@ -2498,7 +3310,7 @@ Player.prototype.dropMostValuableItem = function() {
             vy: -Math.random() * 100 - 200,
             pickRadius: 40,
             grounded: false,
-            noPickupUntil: performance.now() + 3000 // 3 seconds delay to prevent immediate pickup after death
+            noPickupUntil: performance.now() + DROP_PICKUP_DELAY_MS
         };
         
         // Add to world drops

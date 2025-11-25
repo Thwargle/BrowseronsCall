@@ -7,9 +7,15 @@
     "start": "node Working/js/server.js",
     "start:http": "node Working/js/server.js",
     "start:https": "set HTTPS_PORT=8443 && node Working/js/server.js",
+    "start:window": "start powershell -NoExit -Command \"npm run start\"",
+    "start:http:window": "start powershell -NoExit -Command \"npm run start:http\"",
+    "start:https:window": "start powershell -NoExit -Command \"npm run start:https\"",
     "dev": "npx nodemon Working/js/server.js",
     "dev:http": "npx nodemon Working/js/server.js",
-    "dev:https": "set HTTPS_PORT=8443 && npx nodemon Working/js/server.js"
+    "dev:https": "set HTTPS_PORT=8443 && npx nodemon Working/js/server.js",
+    "dev:window": "start powershell -NoExit -Command \"npm run dev\"",
+    "dev:http:window": "start powershell -NoExit -Command \"npm run dev:http\"",
+    "dev:https:window": "start powershell -NoExit -Command \"npm run dev:https\""
   },
   "dependencies": {
     "ws": "^8.14.2",

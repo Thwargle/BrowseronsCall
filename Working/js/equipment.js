@@ -2,7 +2,7 @@
 // Handles all equipment-related operations including equipping, unequipping, and server synchronization
 
 // Core equipment functions
-window.swapEquipWithBag = function(slotIdx) { 
+window.swapEquipWithBag = function(slotIdx, preferredSlot = null) { 
     const it = window.bag[slotIdx]; 
     if(!it) return; 
     
@@ -13,26 +13,39 @@ window.swapEquipWithBag = function(slotIdx) {
         // Determine target equipment slot based on item type
         let targetSlot = null;
         if (it.type === 'armor' && it.slot) {
-            targetSlot = it.slot;
+            if (preferredSlot && preferredSlot !== it.slot) {
+                if (window.log) window.log('That armor does not belong to that slot.');
+                return;
+            }
+            targetSlot = preferredSlot || it.slot;
         } else if (it.type === 'weapon') {
             // Check if weapon is two-handed
             const isTwoHanded = it.twoHanded || 
                 (it.subtype && typeof window.checkIfTwoHanded === 'function' && window.checkIfTwoHanded(it.subtype));
+            const forcedHand = (preferredSlot === 'mainhand' || preferredSlot === 'offhand') ? preferredSlot : null;
             
             // Check if mainhand has a two-handed weapon
             const mainhandIsTwoHanded = window.equip['mainhand'] && 
                 (window.equip['mainhand'].twoHanded || 
                  (window.equip['mainhand'].subtype && typeof window.checkIfTwoHanded === 'function' && window.checkIfTwoHanded(window.equip['mainhand'].subtype)));
             
-            // If mainhand has a two-handed weapon, we must unequip it first (can't equip to offhand)
-            if (mainhandIsTwoHanded) {
-                // Always equip to mainhand, which will unequip the two-handed weapon
+            if (forcedHand === 'mainhand') {
+                targetSlot = 'mainhand';
+            } else if (forcedHand === 'offhand') {
+                if (isTwoHanded) {
+                    if (window.log) window.log('Two-handed weapons must be equipped in the main hand.');
+                    targetSlot = 'mainhand';
+                } else if (mainhandIsTwoHanded) {
+                    // Server will reject this - route to mainhand to keep UX consistent
+                    targetSlot = 'mainhand';
+                } else {
+                    targetSlot = 'offhand';
+                }
+            } else if (mainhandIsTwoHanded) {
                 targetSlot = 'mainhand';
             } else if (!window.equip['mainhand']) {
                 targetSlot = 'mainhand';
-                // If equipping a two-handed weapon, we'll need to clear offhand
             } else if (!window.equip['offhand'] && !isTwoHanded) {
-                // Only allow offhand if weapon is not two-handed and mainhand is not two-handed
                 targetSlot = 'offhand';
             } else {
                 targetSlot = 'mainhand'; // Will swap with mainhand
@@ -268,52 +281,10 @@ window.handleEquipDrop = function(id, slot) {
         return; 
     }
     
-    // Special handling for weapons: if dragging to offhand and mainhand is two-handed, unequip mainhand first
-    if (found.item.type === 'weapon' && slot === 'offhand' && window.equip && window.equip.mainhand) {
-        const mainhandIsTwoHanded = window.equip.mainhand.twoHanded || 
-            (window.equip.mainhand.subtype && typeof window.checkIfTwoHanded === 'function' && window.checkIfTwoHanded(window.equip.mainhand.subtype));
-        
-        if (mainhandIsTwoHanded) {
-            // Unequip the two-handed weapon from mainhand first
-            console.log('Unequipping two-handed weapon from mainhand before equipping to offhand');
-            const mainhandWeapon = window.equip.mainhand;
-            
-            // Find empty inventory slot
-            let emptySlot = window.bag.findIndex(slot => slot === null);
-            if (emptySlot !== -1) {
-                // Move two-handed weapon to inventory
-                if (typeof window.isConnected === 'function' && window.isConnected()) {
-                    const unequipRequest = {
-                        type: 'moveItem',
-                        itemId: mainhandWeapon.id,
-                        fromWhere: 'equip',
-                        fromIndex: null,
-                        fromSlot: 'mainhand',
-                        toWhere: 'bag',
-                        toIndex: emptySlot,
-                        toSlot: null
-                    };
-                    window.wsSend(unequipRequest);
-                    
-                    // Then equip the new weapon to offhand (will be handled after server confirms)
-                    // Wait a bit for server to process unequip, then send equip request
-                    setTimeout(() => {
-                        const equipRequest = {
-                            type: 'moveItem',
-                            itemId: id,
-                            fromWhere: found.where,
-                            fromIndex: found.idx,
-                            fromSlot: found.slot,
-                            toWhere: 'equip',
-                            toIndex: null,
-                            toSlot: slot
-                        };
-                        window.wsSend(equipRequest);
-                    }, 100);
-                    return;
-                }
-            }
-        }
+    // If the item is in the bag, reuse swapEquipWithBag logic so dragging matches double-click behavior
+    if (found.where === 'bag') {
+        window.swapEquipWithBag(found.idx, slot);
+        return;
     }
     
     // Send request to server instead of modifying local state

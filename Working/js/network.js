@@ -1,3 +1,31 @@
+function normalizeEquipmentTwoHandedState(equip) {
+    if (!equip) return equip;
+    const isTwoHanded = (item) => {
+        if (!item) return false;
+        if (item.twoHanded) return true;
+        const subtype = item.subtype || item.type || item.name;
+        if (typeof window.checkIfTwoHanded === 'function') {
+            return window.checkIfTwoHanded(subtype || item);
+        }
+        return false;
+    };
+    
+    if (equip.mainhand && isTwoHanded(equip.mainhand)) {
+        equip.offhand = equip.mainhand;
+    } else {
+        if (equip.offhand && equip.offhand === equip.mainhand) {
+            equip.offhand = null;
+        } else if (equip.offhand && equip.mainhand && equip.offhand.id && equip.mainhand.id && equip.offhand.id === equip.mainhand.id) {
+            equip.offhand = null;
+        }
+        if (!equip.mainhand && equip.offhand && isTwoHanded(equip.offhand)) {
+            equip.offhand = null;
+        }
+    }
+    return equip;
+}
+
+window.normalizeEquipmentTwoHandedState = normalizeEquipmentTwoHandedState;
 // network.js — improved websocket client with reconnection and error handling
 (function(){
 'use strict';
@@ -61,10 +89,46 @@ window.wsConnect = function(url) {
             }
         };
         
+        // Message queue for async processing to prevent blocking render loop
+        window._messageQueue = window._messageQueue || [];
+        window._processingMessages = window._processingMessages || false;
+        
+        // Process messages asynchronously to avoid blocking render loop
+        function processMessageQueue() {
+            if (window._processingMessages || window._messageQueue.length === 0) return;
+            window._processingMessages = true;
+            
+            // Process up to 10 messages per frame to maintain 60fps
+            const maxMessagesPerFrame = 10;
+            let processed = 0;
+            
+            while (window._messageQueue.length > 0 && processed < maxMessagesPerFrame) {
+                const msg = window._messageQueue.shift();
+                try {
+                    handleServerMessage(msg);
+                } catch (e) {
+                    console.error('Error processing server message:', e);
+                }
+                processed++;
+            }
+            
+            window._processingMessages = false;
+            
+            // Schedule next batch if queue is not empty
+            if (window._messageQueue.length > 0) {
+                requestAnimationFrame(processMessageQueue);
+            }
+        }
+        
         socket.onmessage = (ev) => {
             try {
                 const msg = JSON.parse(ev.data);
-                handleServerMessage(msg);
+                // Add to queue for async processing
+                window._messageQueue.push(msg);
+                // Start processing if not already running
+                if (!window._processingMessages) {
+                    requestAnimationFrame(processMessageQueue);
+                }
             } catch (e) {
                 console.error('Error parsing server message:', e);
                 window.log('Error parsing server message');
@@ -117,14 +181,28 @@ window.wsConnect = function(url) {
 window.wsSend = function(obj) {
     if (socket && socket.readyState === WebSocket.OPEN) {
         try {
-            socket.send(JSON.stringify(obj));
+            const messageStr = JSON.stringify(obj);
+            socket.send(messageStr);
+            
             return true;
         } catch (e) {
             window.log('Failed to send message: ' + e.message);
+            if (obj.type === 'shootProjectile' && obj.weaponType === 'Crossbow') {
+                console.error('wsSend: Error sending Crossbow shootProjectile:', e);
+            }
+            if (obj.type === 'getBuybackItems') {
+                console.error('[CLIENT] Error sending getBuybackItems:', e);
+            }
             return false;
         }
     } else {
         // If not connected, try to reconnect
+        if (obj.type === 'getBuybackItems') {
+            console.error('[CLIENT] Cannot send getBuybackItems - socket not ready. State:', socket ? socket.readyState : 'null');
+        }
+        if (obj.type === 'shootProjectile' && obj.weaponType === 'Crossbow') {
+            console.error('wsSend: Cannot send Crossbow shootProjectile - socket not ready. State:', socket ? socket.readyState : 'null');
+        }
         if (!isConnecting && serverUrl) {
             window.log('Not connected, attempting to reconnect...');
             wsConnect(serverUrl);
@@ -240,7 +318,9 @@ window.handleServerMessage = function(msg) {
                 if (!window.remoteEnemies) window.remoteEnemies = new Map();
                 const enemyData = { ...msg };
                 // Use server-provided colors for consistent appearance across all clients
-                if (!enemyData.colors) {
+                // Wisp enemies don't need colors (they're sprite-based)
+                const enemyType = enemyData.type || msg.enemyType;
+                if (!enemyData.colors && enemyType !== 'waterwisp' && enemyType !== 'firewisp' && enemyType !== 'earthwisp' && enemyType !== 'windwisp') {
                     console.warn('Enemy spawned without colors from server:', msg.id);
                 }
                 window.remoteEnemies.set(msg.id, enemyData);
@@ -261,9 +341,11 @@ window.handleServerMessage = function(msg) {
                     }
                     
                     // Initialize inventory (will be updated by playerData if it arrives)
+                    // BUT: If playerData doesn't arrive, we need to request it or use stored data
                     if (!window.bag || !Array.isArray(window.bag)) {
                         window.bag = new Array(12).fill(null);
                     }
+                    
                     
                     // Initialize UI and display IMMEDIATELY
                     if (window.initInventoryUI) {
@@ -285,6 +367,14 @@ window.handleServerMessage = function(msg) {
                     setTimeout(forceDisplay, 300);
                     setTimeout(forceDisplay, 500);
                     
+                    // If playerData doesn't arrive within 2 seconds, log a warning
+                    setTimeout(() => {
+                        if (!window.connectionStatus.initialConnectionComplete) {
+                            console.warn('[CLIENT] [playerJoined] playerData message not received after 2 seconds. Inventory may be empty.');
+                            console.warn('[CLIENT] [playerJoined] Current bag state:', window.bag ? window.bag.filter(i => i !== null).length + ' items' : 'null');
+                        }
+                    }, 2000);
+                    
                     // Mark as complete if we have equipment to show
                     if (window.equip && Object.values(window.equip).some(v => v !== null)) {
                         setTimeout(() => {
@@ -302,6 +392,8 @@ window.handleServerMessage = function(msg) {
                         y: 0,
                         health: 100,
                         maxHealth: 100,
+                        mana: msg.mana || 50,
+                        maxMana: msg.maxMana || 50,
                         pyreals: 0,
                         equip: msg.equip || null,
                         shirtColor: msg.shirtColor || null,
@@ -317,6 +409,16 @@ window.handleServerMessage = function(msg) {
                         if (msg.shirtColor) window.gameState.players[idx].shirtColor = msg.shirtColor;
                         if (msg.pantColor) window.gameState.players[idx].pantColor = msg.pantColor;
                         if (msg.equipmentColors) window.gameState.players[idx].equipmentColors = msg.equipmentColors;
+                        if (msg.mana !== undefined) window.gameState.players[idx].mana = msg.mana;
+                        if (msg.maxMana !== undefined) window.gameState.players[idx].maxMana = msg.maxMana;
+                    }
+                }
+                
+                // Initialize local player mana if this is our player
+                if (window.player && window.player.id === msg.id) {
+                    if (window.player.mana === undefined) {
+                        window.player.mana = msg.mana || window.player.stats?.Mana || 50;
+                        window.player.maxMana = msg.maxMana || window.player.stats?.Mana || 50;
                     }
                 }
                 break;
@@ -339,8 +441,6 @@ window.handleServerMessage = function(msg) {
                                 (msg.name + ' left the level') : 
                                 (msg.name + ' left the game');
                             window.log(message);
-                        } else {
-                            console.log(msg.name + ' left the ' + (msg.levelChange ? 'level' : 'game'));
                         }
                     }
                 }
@@ -356,8 +456,6 @@ window.handleServerMessage = function(msg) {
                         
                         if (window.log) {
                             window.log(msg.playerName + ' has died!');
-                        } else {
-                            console.log(msg.playerName + ' has died!');
                         }
                     }
                 }
@@ -378,8 +476,6 @@ window.handleServerMessage = function(msg) {
                         
                         if (window.log) {
                             window.log(msg.playerName + ' has respawned!');
-                        } else {
-                            console.log(msg.playerName + ' has respawned!');
                         }
                     }
                 }
@@ -441,6 +537,108 @@ window.handleServerMessage = function(msg) {
                 }
                 break;
                 
+            case 'buybackItems':
+                // Update buyback list in vendor window
+                if (msg.items && Array.isArray(msg.items)) {
+                    let buybackList = document.getElementById('buybackList');
+                    
+                    // If element doesn't exist, try to find it in the buyback tab content
+                    if (!buybackList) {
+                        const buybackTabContent = document.getElementById('tabContentBuyback');
+                        if (buybackTabContent) {
+                            buybackList = buybackTabContent.querySelector('#buybackList');
+                            if (!buybackList) {
+                                // Create the element if it doesn't exist
+                                buybackList = document.createElement('div');
+                                buybackList.id = 'buybackList';
+                                buybackTabContent.appendChild(buybackList);
+                            }
+                        }
+                    }
+                    
+                    if (buybackList) {
+                        buybackList.innerHTML = '';
+                        
+                        // Always show 10 slots to maintain consistent height
+                        const MAX_BUYBACK_DISPLAY = 10;
+                        for (let i = 0; i < MAX_BUYBACK_DISPLAY; i++) {
+                            const item = msg.items[i];
+                            const row = document.createElement('div');
+                            row.className = 'row';
+                            
+                            const left = document.createElement('div');
+                            const right = document.createElement('div');
+                            
+                            if (item) {
+                                // Item exists - show it with buy button
+                                // Use getRarityColor from ui.js if available, otherwise use default
+                                const getRarityColor = window.getRarityColor || function(rarity) {
+                                    if (!rarity) return '#ffffff';
+                                    const rar = rarity.toLowerCase();
+                                    if (rar === 'legendary') return '#ff9a1c';
+                                    if (rar === 'epic') return '#b37bff';
+                                    if (rar === 'rare') return '#3da5ff';
+                                    if (rar === 'uncommon') return '#4caf50';
+                                    return '#ffffff';
+                                };
+                                const rarityColor = getRarityColor(item.rarity);
+                                const soldByText = item.soldBy ? ` (sold by ${item.soldBy})` : '';
+                                left.innerHTML = `<span style="color: ${rarityColor}">${item.name}${soldByText}</span>`;
+                                
+                                right.innerHTML = `${item.value||0} <button>Buy</button>`;
+                                
+                                right.querySelector('button').addEventListener('click', () => {
+                                    if (window.isConnected && window.isConnected() && typeof window.wsSend === 'function') {
+                                        window.wsSend({
+                                            type: 'buybackItem',
+                                            buybackId: item.buybackId
+                                        });
+                                    }
+                                });
+                            } else {
+                                // Empty slot - show placeholder to maintain window size
+                                left.innerHTML = `<span style="color: #666; font-style: italic;">Empty slot</span>`;
+                                right.innerHTML = `- <button style="visibility: hidden; pointer-events: none;">Buy</button>`;
+                            }
+                            
+                            row.appendChild(left);
+                            row.appendChild(right);
+                            buybackList.appendChild(row);
+                        }
+                    }
+                }
+                break;
+                
+            case 'buybackSuccess':
+                // Show success message and refresh
+                if (msg.message) {
+                    window.log(msg.message);
+                }
+                // Refresh buyback list after purchase
+                if (window.isConnected && window.isConnected() && typeof window.wsSend === 'function') {
+                    window.wsSend({ type: 'getBuybackItems' });
+                }
+                // Refresh inventory UI
+                if (typeof window.refreshInventoryUI === 'function') {
+                    window.refreshInventoryUI();
+                }
+                // Refresh shop if open, but stay on buyback tab
+                const shopPanel = document.getElementById('shopPanel');
+                if (shopPanel && shopPanel.style.display === 'block') {
+                    if (typeof window.openShop === 'function') {
+                        window.openShop('buyback'); // Explicitly stay on buyback tab
+                    }
+                }
+                break;
+                
+            case 'buybackError':
+                // Show error message
+                if (msg.message) {
+                    window.log('Buyback error: ' + msg.message);
+                    alert(msg.message);
+                }
+                break;
+                
             case 'playerData':
                 // Handle player data from server (inventory, equipment, etc.)
                 
@@ -448,11 +646,24 @@ window.handleServerMessage = function(msg) {
                 let inventoryUpdated = false;
                 let equipmentUpdated = false;
                 
+                // Update mana from server (restore persisted value)
+                if (msg.mana !== undefined && window.player) {
+                    window.player.mana = msg.mana;
+                    window.player.maxMana = msg.maxMana || 50;
+                    // Update stats UI to reflect mana change
+                    if (window.updatePlayerStatsUI) {
+                        window.updatePlayerStatsUI(true);
+                    }
+                } else if (window.player && window.player.mana === undefined) {
+                    // Initialize mana if not set
+                    window.player.mana = window.player.maxMana || window.player.stats?.Mana || 50;
+                    window.player.maxMana = window.player.maxMana || window.player.stats?.Mana || 50;
+                }
+                
                 // Update pyreals from server (restore persisted value)
                 if (msg.pyreals !== undefined) {
                     if (window.player) {
                         window.player.pyreals = msg.pyreals || 0;
-                        console.log('Restored pyreals from server:', window.player.pyreals);
                     }
                     // Update UI display immediately
                     const goldAmtElement = document.getElementById('goldAmt');
@@ -469,8 +680,17 @@ window.handleServerMessage = function(msg) {
                 if (msg.equip) {
                     // Ensure all equipment slots exist and restore from server data
                     const defaultEquip = {head:null,neck:null,shoulders:null,chest:null,waist:null,legs:null,feet:null,wrists:null,hands:null,mainhand:null,offhand:null,trinket:null};
+                    // Normalize all equipment items to ensure locked property is preserved
+                    const normalizedEquip = {};
+                    for (const [slot, item] of Object.entries(msg.equip)) {
+                        if (item && typeof window.normalizeItem === 'function') {
+                            normalizedEquip[slot] = window.normalizeItem(item);
+                        } else {
+                            normalizedEquip[slot] = item;
+                        }
+                    }
                     // For reconnections, always use server data to ensure consistency
-                    window.equip = { ...defaultEquip, ...msg.equip };
+                    window.equip = { ...defaultEquip, ...normalizedEquip };
                     equipmentUpdated = true;
                 } else {
                     // Ensure equipment object exists even if not provided
@@ -493,7 +713,7 @@ window.handleServerMessage = function(msg) {
                         while (window.bag.length < 12) window.bag.push(null);
                         if (window.bag.length > 12) window.bag = window.bag.slice(0, 12);
                         inventoryUpdated = true;
-                        console.log('Inventory restored from server:', window.bag.length, 'slots');
+                        const itemCount = window.bag.filter(i => i !== null).length;
                     } else {
                         window.bag = new Array(12).fill(null);
                         inventoryUpdated = true;
@@ -636,6 +856,9 @@ window.handleServerMessage = function(msg) {
                             }, 100);
                             setTimeout(() => {
                                 window.displayInventoryItems();
+                            }, 500);
+                            setTimeout(() => {
+                                window.displayInventoryItems();
                             }, 300);
                         } catch (error) {
                             console.error('Error force displaying inventory:', error);
@@ -643,45 +866,33 @@ window.handleServerMessage = function(msg) {
                     }
                 };
                 
-                // Trigger display immediately - inventory has been updated above
-                forceDisplayInventory();
-                
-                // Also trigger it when DOM is definitely ready
-                if (document.readyState === 'complete') {
-                    setTimeout(() => forceDisplayInventory(), 100);
-                } else {
-                    window.addEventListener('load', () => {
-                        setTimeout(() => forceDisplayInventory(), 100);
-                    });
-                }
-                
-                // Also use the ensureInventoryReady mechanism with retries
-                const retryDelays = [50, 100, 200, 500, 1000, 2000, 3000];
-                retryDelays.forEach((delay, index) => {
-                    setTimeout(() => {
-                        forceDisplayInventory();
-                        if (!ensureInventoryReady()) {
-                            if (index === retryDelays.length - 1) {
-                                console.error('Failed to display inventory after all retries');
-                            }
+                // Always attempt to display inventory - don't skip if already displayed
+                // The displayInventoryItems function itself handles whether it should display
+                const attemptDisplay = () => {
+                    try {
+                        if (window.displayInventoryItems && typeof window.displayInventoryItems === 'function') {
+                            window.displayInventoryItems();
                         }
+                    } catch (error) {
+                        console.error('Error displaying inventory:', error);
+                    }
+                };
+                
+                // Trigger display immediately
+                attemptDisplay();
+                
+                // Retry with reasonable delays to ensure display works even if DOM isn't ready
+                const retryDelays = [50, 100, 200, 500, 1000];
+                retryDelays.forEach((delay) => {
+                    setTimeout(() => {
+                        attemptDisplay();
                     }, delay);
                 });
                 
-                // Mark connection as complete
-                if (msg.equip && equipmentUpdated) {
-                    setTimeout(() => {
-                        if (window.displayInventoryItems) {
-                            window.displayInventoryItems();
-                            window.displayInventoryItems();
-                            window.connectionStatus.initialConnectionComplete = true;
-                        }
-                    }, 500);
-                } else {
-                    setTimeout(() => {
-                        window.connectionStatus.initialConnectionComplete = true;
-                    }, 1000);
-                }
+                // Mark connection as complete after retries
+                setTimeout(() => {
+                    window.connectionStatus.initialConnectionComplete = true;
+                }, 1500);
                 
                 // Ensure worldDrops exists
                 if (!window.worldDrops) {
@@ -734,7 +945,6 @@ window.handleServerMessage = function(msg) {
                 // Always set floors, vendor, spawners, and portals from server data
                 if (Array.isArray(msg.floors)) {
                     window.gameState.floors = msg.floors;
-                    console.log('Set floors:', window.gameState.floors.length);
                 }
                 
                 if (msg.vendor) {
@@ -743,19 +953,16 @@ window.handleServerMessage = function(msg) {
                         anim: msg.vendor.anim || {timer: 0, index: 0}
                     };
                     window.vendor = window.gameState.vendor;
-                    console.log('Set vendor:', window.vendor.id);
                 }
                 
                 if (Array.isArray(msg.spawners)) {
                     window.gameState.spawners = msg.spawners;
                     window.spawners = msg.spawners;
-                    console.log('Set spawners:', window.spawners.length);
                 }
                 
                 if (Array.isArray(msg.portals)) {
                     window.gameState.portals = msg.portals;
                     window.portals = msg.portals;
-                    console.log('Set portals:', window.portals.length);
                 }
                 
                 // Handle initial game state
@@ -773,7 +980,6 @@ window.handleServerMessage = function(msg) {
                     window.gameState.enemies = msg.enemies || [];
                     window.gameState.worldDrops = msg.worldDrops || [];
                     
-                    console.log('Updated gameState with players:', playersWithVisualData.length, 'players');
                     
                     // Update global rendering variables used by engine.js
                     window.enemies = window.gameState.enemies;
@@ -792,12 +998,6 @@ window.handleServerMessage = function(msg) {
                             window.player.health = serverPlayer.health;
                             window.player.maxHealth = serverPlayer.maxHealth;
                             window.player.pyreals = serverPlayer.pyreals;
-                            console.log('Updated local player from server:', {
-                                id: window.player.id,
-                                x: window.player.x,
-                                y: window.player.y,
-                                health: window.player.health
-                            });
                         } else {
                             console.warn('Local player not found in server players list. Player ID:', window.player.id, 'Available players:', playersWithVisualData.map(p => p.id));
                         }
@@ -805,7 +1005,6 @@ window.handleServerMessage = function(msg) {
                         console.warn('Local player not initialized when gameState received. window.player:', !!window.player, 'window.player.id:', window.player?.id);
                     }
                 } else {
-                    console.log('No players in gameState message (might be initial connection)');
                 }
                 // Server-authoritative enemies
                 if (!window.remoteEnemies) window.remoteEnemies = new Map();
@@ -815,11 +1014,9 @@ window.handleServerMessage = function(msg) {
                 }
                                  if (msg.worldDrops) {
                     // Server is always authoritative for world drops
-                    console.log('Received world drops from server:', msg.worldDrops.length, 'items');
                     
                     // Always replace world drops completely on gameState messages (initial connection/reconnection)
                     // This prevents accumulation and ensures consistency with server state
-                    console.log('Replacing world drops with server data');
                     window.worldDrops.length = 0;
                     
                     // Process all drops from server
@@ -880,39 +1077,31 @@ window.handleServerMessage = function(msg) {
                 if (Array.isArray(msg.portals)) {
                     if (!window.gameState) window.gameState = {};
                     window.gameState.portals = msg.portals.map(p => ({...p}));
-                    console.log('Received portals from server:', window.gameState.portals.length);
                 }
                 break;
                 
             case 'levelChange':
                 // Handle level change - completely reload the level
-                console.log('Level changed to:', msg.levelName);
-                console.log('Received level data:', msg.levelData);
-                console.log('Received portals:', msg.portals);
                 
                 // CRITICAL: Clear ALL old level data completely before loading new level
                 // Clear remote enemies map (server-authoritative enemies)
                 if (window.remoteEnemies) {
                     window.remoteEnemies.clear();
-                    console.log('Cleared remoteEnemies map');
                 }
                 
                 // Clear all projectiles from previous level
                 if (window.projectiles) {
                     window.projectiles.length = 0;
-                    console.log('Cleared projectiles');
                 }
                 
                 // Clear world drops from previous level
                 if (window.worldDrops) {
                     window.worldDrops.length = 0;
-                    console.log('Cleared world drops');
                 }
                 
                 // Clear local enemies array (for offline mode, shouldn't exist when connected but clear anyway)
                 if (window.enemies && Array.isArray(window.enemies)) {
                     window.enemies.length = 0;
-                    console.log('Cleared local enemies');
                 }
                 
                 if (msg.levelData) {
@@ -948,19 +1137,8 @@ window.handleServerMessage = function(msg) {
                     } else {
                         // Double-check: clear any remaining enemies
                         window.remoteEnemies.clear();
-                        console.log('Double-checked: cleared remoteEnemies map again');
                     }
                     
-                    console.log('Level completely reloaded - all old data cleared');
-                    console.log('New level state:', {
-                        floors: window.gameState.floors.length,
-                        spawners: window.spawners.length,
-                        portals: window.portals.length,
-                        enemies: window.enemies.length,
-                        remoteEnemies: window.remoteEnemies ? window.remoteEnemies.size : 0,
-                        worldDrops: window.worldDrops.length,
-                        vendor: !!window.vendor
-                    });
                     
                     // Reset player position to spawn point
                     if (window.player) {
@@ -969,12 +1147,9 @@ window.handleServerMessage = function(msg) {
                         window.player.portalCooldown = 0; // Reset portal cooldown
                     }
                     
-                    console.log('Level completely reloaded:', msg.levelName);
-                    console.log('New game state:', window.gameState);
                     
                     // Log that enemies will spawn from spawners after floors render
                     if (window.spawners && window.spawners.length > 0) {
-                        console.log(`Enemies will spawn from ${window.spawners.length} spawners after floors render (2 second delay)`);
                     }
                 }
                 break;
@@ -993,7 +1168,9 @@ window.handleServerMessage = function(msg) {
                         pyreals: msg.pyreals,
                         shirtColor: msg.shirtColor || window.gameState.players[idxPU].shirtColor,
                         pantColor: msg.pantColor || window.gameState.players[idxPU].pantColor,
-                        equipmentColors: msg.equipmentColors || window.gameState.players[idxPU].equipmentColors
+                        equipmentColors: msg.equipmentColors || window.gameState.players[idxPU].equipmentColors,
+                        mana: msg.mana,
+                        maxMana: msg.maxMana
                     };
                 } else {
                     window.gameState.players.push({ 
@@ -1006,7 +1183,9 @@ window.handleServerMessage = function(msg) {
                         pyreals: msg.pyreals,
                         shirtColor: msg.shirtColor || null,
                         pantColor: msg.pantColor || null,
-                        equipmentColors: msg.equipmentColors || {}
+                        equipmentColors: msg.equipmentColors || {},
+                        mana: msg.mana,
+                        maxMana: msg.maxMana
                     });
                 }
                 
@@ -1026,6 +1205,46 @@ window.handleServerMessage = function(msg) {
                     }
                 }
                 break;
+                
+            case 'manaUpdated':
+                // Update player mana from server
+                // manaUpdated is sent to the player who cast the spell (us), so update local player
+                if (window.player) {
+                    // Update local player mana
+                    window.player.mana = msg.mana;
+                    window.player.maxMana = msg.maxMana;
+                    // Force update stats UI immediately to reflect mana change
+                    if (window.updatePlayerStatsUI) {
+                        // Force update by resetting tracking values first
+                        window.player._lastManaShown = -1;
+                        window.player._lastMaxManaShown = -1;
+                        window.updatePlayerStatsUI(true);
+                    }
+                }
+                
+                // Also update other players' mana if id is provided
+                if (msg.id && window.gameState && window.gameState.players) {
+                    const playerIdx = window.gameState.players.findIndex(p => p.id === msg.id);
+                    if (playerIdx !== -1) {
+                        window.gameState.players[playerIdx].mana = msg.mana;
+                        window.gameState.players[playerIdx].maxMana = msg.maxMana;
+                    }
+                }
+                break;
+                
+            case 'insufficientMana':
+                // Show message when player tries to cast without enough mana
+                if (window.log) {
+                    window.log(msg.message || 'Not enough mana to cast spell!');
+                }
+                // Visual feedback - flash mana bar or show error message
+                if (window.player) {
+                    window.player._insufficientManaFlash = true;
+                    setTimeout(() => {
+                        if (window.player) window.player._insufficientManaFlash = false;
+                    }, 1000);
+                }
+                break;
             case 'enemyUpdate':
                 if (!window.remoteEnemies) window.remoteEnemies = new Map();
                 if (typeof msg.id !== 'undefined') {
@@ -1033,16 +1252,32 @@ window.handleServerMessage = function(msg) {
                     // Store previous health to detect damage
                     const previousHealth = existing.health || 0;
                     
-                    // Preserve existing colors when updating enemy data
-                    const updatedEnemy = { ...existing, ...msg };
+                    // Preserve existing enemy type before spreading message (message.type is 'enemyUpdate', not enemy type)
+                    const existingType = existing.type;
+                    // Preserve existing colors when updating enemy data, but update equipment
+                    // Don't spread msg.type as it's the message type, not the enemy type
+                    const { type: messageType, ...msgWithoutType } = msg;
+                    const updatedEnemy = { ...existing, ...msgWithoutType };
+                    // Set enemy type from enemyType field in message, or preserve existing type
+                    updatedEnemy.type = msg.enemyType || existingType;
                     // Colors should come from server, don't generate client-side
-                    if (!updatedEnemy.colors) {
-                        console.warn('Enemy updated without colors from server:', msg.id);
+                    // Wisp enemies don't need colors (they're sprite-based)
+                    const enemyType = updatedEnemy.type;
+                    if (!updatedEnemy.colors && enemyType && enemyType !== 'waterwisp' && enemyType !== 'firewisp' && enemyType !== 'earthwisp' && enemyType !== 'windwisp') {
+                        console.warn('Enemy updated without colors from server:', msg.id, 'enemyType:', enemyType);
                     }
                     
-                    // Trigger damage flash if health decreased
+                    // Trigger damage flash if health decreased (not for Wisp - it uses hurt sprites)
                     if (updatedEnemy.health < previousHealth && updatedEnemy.health > 0) {
-                        updatedEnemy.damageFlashTimer = 0.3; // Flash for 0.3 seconds
+                        if (updatedEnemy.type !== 'waterwisp' && updatedEnemy.type !== 'firewisp' && updatedEnemy.type !== 'earthwisp' && updatedEnemy.type !== 'windwisp') {
+                            updatedEnemy.damageFlashTimer = 0.3; // Flash for 0.3 seconds
+                        }
+                        // Water Wisp uses hurtAnimTime which is set by the server
+                    }
+                    
+                    // Initialize dieAnimProgress for Water Wisp if it's dead and progress is set
+                    if ((updatedEnemy.type === 'waterwisp' || updatedEnemy.type === 'firewisp' || updatedEnemy.type === 'earthwisp' || updatedEnemy.type === 'windwisp') && updatedEnemy.dead && updatedEnemy.dieAnimProgress !== undefined) {
+                        updatedEnemy.dieAnimProgress = updatedEnemy.dieAnimProgress || 0;
                     }
                     
                     window.remoteEnemies.set(msg.id, updatedEnemy);
@@ -1052,14 +1287,27 @@ window.handleServerMessage = function(msg) {
                 if (window.remoteEnemies && typeof msg.id !== 'undefined') {
                     window.remoteEnemies.delete(msg.id);
                 }
+                // Also remove from gameState.enemies if it exists there
+                if (window.gameState && window.gameState.enemies && Array.isArray(window.gameState.enemies)) {
+                    const index = window.gameState.enemies.findIndex(e => e && e.id === msg.id);
+                    if (index !== -1) {
+                        window.gameState.enemies.splice(index, 1);
+                    }
+                }
                 break;
             case 'enemySpawned':
                 if (window.gameState && window.gameState.enemies) {
                     // Add to remote enemies map for server-authoritative enemies
                     if (window.remoteEnemies) {
                         const enemyData = { ...msg };
+                        // Update type if provided in message (enemyType is used in server broadcasts to avoid conflict with message type)
+                        if (msg.enemyType) {
+                            enemyData.type = msg.enemyType;
+                        }
                         // Use server-provided colors for consistent appearance across all clients
-                        if (!enemyData.colors) {
+                        // Wisp enemies don't need colors (they're sprite-based)
+                        const enemyType = enemyData.type || msg.enemyType;
+                        if (!enemyData.colors && enemyType !== 'waterwisp' && enemyType !== 'firewisp' && enemyType !== 'earthwisp' && enemyType !== 'windwisp') {
                             console.warn('Enemy spawned without colors from server:', msg.id);
                         }
                         window.remoteEnemies.set(msg.id, enemyData);
@@ -1070,7 +1318,6 @@ window.handleServerMessage = function(msg) {
             case 'basic':
                 // Handle enemy data with type 'basic' (appears to be enemy spawn/update data)
                 if (msg.id && typeof msg.x === 'number' && typeof msg.y === 'number') {
-                    console.log('Received enemy data with type "basic":', msg);
                     // This appears to be enemy data, treat it as an enemy spawn
                     if (window.gameState && window.gameState.enemies) {
                         if (window.remoteEnemies) {
@@ -1083,7 +1330,8 @@ window.handleServerMessage = function(msg) {
                                 // Add new enemy
                                 const enemyData = { ...msg };
                                 // Use server-provided colors for consistent appearance across all clients
-                                if (!enemyData.colors) {
+                                // Wisp enemies don't need colors (they're sprite-based)
+                                if (!enemyData.colors && enemyData.type !== 'waterwisp' && enemyData.type !== 'firewisp' && enemyData.type !== 'earthwisp' && enemyData.type !== 'windwisp') {
                                     console.warn('Enemy data without colors from server:', msg.id);
                                 }
                                 window.remoteEnemies.set(msg.id, enemyData);
@@ -1125,7 +1373,6 @@ window.handleServerMessage = function(msg) {
                     // Check if this drop already exists to prevent duplicates
                     const existingDropIndex = window.worldDrops.findIndex(d => d.id === msg.id);
                     if (existingDropIndex !== -1) {
-                        console.log('Drop already exists locally, skipping duplicate:', msg.id);
                         break;
                     }
                     
@@ -1157,7 +1404,6 @@ window.handleServerMessage = function(msg) {
                     
                     // Add to local world drops for immediate display
                     window.worldDrops.push(normalizedDrop);
-                    console.log('Added drop locally for immediate display:', normalizedDrop.id);
                     break;
                          case 'pickupItem':
                  // Remove drop locally for immediate visual feedback, but server remains authoritative
@@ -1166,7 +1412,6 @@ window.handleServerMessage = function(msg) {
                      const i = window.worldDrops.findIndex(d => d.id === msg.dropId);
                      if (i !== -1) {
                          window.worldDrops.splice(i, 1);
-                         console.log('Removed drop locally for immediate display:', msg.dropId);
                      }
                  }
                  break;
@@ -1190,44 +1435,52 @@ window.handleServerMessage = function(msg) {
                  break;
              case 'inventoryUpdated':
                  // Server confirms inventory change - update local state
-                 console.log('Received inventoryUpdated message:', msg.inventory);
+                 console.log('Received inventoryUpdated from server');
                  
                  if (msg.inventory && Array.isArray(msg.inventory)) {
-                     // Only update if the server inventory actually has changes
-                     const hasChanges = !window.bag || window.bag.length !== msg.inventory.length || 
-                                      window.bag.some((item, i) => JSON.stringify(item) !== JSON.stringify(msg.inventory[i]));
+                     // Always update from server - server is authoritative
+                     window.bag = msg.inventory.map(item => {
+                         if (item && typeof window.normalizeItem === 'function') {
+                             return window.normalizeItem(item);
+                         }
+                         return item;
+                     });
+                     console.log('Updated window.bag');
+                     while (window.bag.length < 12) window.bag.push(null);
+                     if (window.bag.length > 12) window.bag = window.bag.slice(0, 12);
                      
-                     if (hasChanges) {
-                         console.log('Updating inventory from server confirmation');
-                         window.bag = [...msg.inventory];
-                         while (window.bag.length < 12) window.bag.push(null);
-                         if (window.bag.length > 12) window.bag = window.bag.slice(0, 12);
-                     } else {
-                         console.log('Inventory already up to date, skipping update');
-                     }
-                     
-                     // Update UI to reflect server state
-                     if (window.displayInventoryItems) {
-
-                         window.displayInventoryItems();
-                     } else {
-                         console.warn('displayInventoryItems function not available');
-                     }
+                    // Throttle inventory display updates to prevent excessive calls
+                    if (!window._inventoryDisplayThrottle) {
+                        window._inventoryDisplayThrottle = null;
+                    }
+                    clearTimeout(window._inventoryDisplayThrottle);
+                    window._inventoryDisplayThrottle = setTimeout(() => {
+                        if (window.displayInventoryItems) {
+                            try {
+                                window.displayInventoryItems();
+                            } catch (error) {
+                                console.error('Error refreshing inventory display:', error);
+                            }
+                        }
+                        window._inventoryDisplayThrottle = null;
+                    }, 50); // Small delay to batch rapid updates
                      
                      // Refresh shop if it's currently open to show updated inventory
+                     // Preserve current tab
                      const shopPanel = document.getElementById('shopPanel');
                      if (shopPanel && shopPanel.style.display === 'block') {
                          if (typeof window.openShop === 'function') {
-                             window.openShop();
+                             const currentTab = window._shopActiveTab || 'inventory';
+                             window.openShop(currentTab);
                          }
                      }
                  }
                  break;
                          case 'equipmentUpdated':
                 // Server confirms equipment change - update local state
+                console.log('Received equipmentUpdated from server');
                 
                 if (msg.equip) {
-                    console.log('Received equipmentUpdated from server:', msg.equip);
                     
                     // Ensure window.equip exists with all slots
                     if (!window.equip) {
@@ -1236,31 +1489,76 @@ window.handleServerMessage = function(msg) {
                     
                     // Server is authoritative - replace entire equipment object
                     // This ensures consistency with server state
-                    window.equip = { ...msg.equip };
+                    // Deep clone to preserve all properties including locked
+                    const clonedEquip = JSON.parse(JSON.stringify(msg.equip));
                     
-                    console.log('Updated local equipment from server:', window.equip);
+                    // Normalize all equipment items to ensure locked property is preserved
+                    const normalizedEquip = {};
+                    for (const [slot, item] of Object.entries(clonedEquip)) {
+                        if (item && typeof window.normalizeItem === 'function') {
+                            normalizedEquip[slot] = window.normalizeItem(item);
+                        } else {
+                            normalizedEquip[slot] = item;
+                        }
+                    }
+                    
+                    window.equip = normalizeEquipmentTwoHandedState(normalizedEquip);
+                    
                     
                     // Update reach calculation immediately when equipment changes
                     if (window.player && typeof window.player.calculateReach === 'function') {
                         window.player.calculateReach();
                     }
                     
-                    // Update equipment UI
-                    if (window.displayInventoryItems) {
-                        window.displayInventoryItems();
-                    } else {
-                        console.warn('displayInventoryItems function not available');
+                    // Throttle equipment display updates to prevent excessive calls
+                    // Use the same throttle as inventory to batch updates together
+                    if (!window._inventoryDisplayThrottle) {
+                        window._inventoryDisplayThrottle = null;
                     }
+                    clearTimeout(window._inventoryDisplayThrottle);
+                    window._inventoryDisplayThrottle = setTimeout(() => {
+                        if (window.displayInventoryItems) {
+                            try {
+                                console.log('Refreshing inventory/equipment display after equipmentUpdated');
+                                window.displayInventoryItems();
+                            } catch (error) {
+                                console.error('Error refreshing equipment display:', error);
+                            }
+                        }
+                        window._inventoryDisplayThrottle = null;
+                    }, 50); // Small delay to batch rapid updates
                     
                     // Refresh shop if it's currently open to show updated equipment
+                    // Preserve current tab
                     const shopPanel = document.getElementById('shopPanel');
                     if (shopPanel && shopPanel.style.display === 'block') {
                         if (typeof window.openShop === 'function') {
-                            window.openShop();
+                            const currentTab = window._shopActiveTab || 'inventory';
+                            window.openShop(currentTab);
                         }
                     }
                 }
                 break;
+                
+            case 'moveItemRejected':
+                // Server rejected an item move - show error and refresh inventory/equipment
+                console.warn('Item move rejected by server:', msg.reason);
+                
+                // Show user-friendly error message
+                if (msg.reason) {
+                    window.log(msg.reason);
+                }
+                
+                // Force refresh inventory and equipment to sync with server state
+                if (window.displayInventoryItems) {
+                    setTimeout(() => {
+                        if (window.displayInventoryItems) {
+                            window.displayInventoryItems();
+                        }
+                    }, 100);
+                }
+                break;
+                
              case 'projectileCreated':
                  // Initialize projectiles array if it doesn't exist
                  if (!window.projectiles) window.projectiles = [];
@@ -1281,25 +1579,20 @@ window.handleServerMessage = function(msg) {
                  }
                  
                  window.projectiles.push(newProjectile);
-                 console.log('Added projectile to local array:', newProjectile.type, 'Total projectiles:', window.projectiles.length);
                  break;
                  
              case 'arrow':
                  // Fallback handler for direct arrow messages (shouldn't happen with fixed server)
-                 console.log('Received direct arrow message (fallback handler)');
                  if (!window.projectiles) window.projectiles = [];
                  const arrowProjectile = { ...msg };
                  window.projectiles.push(arrowProjectile);
-                 console.log('Added arrow projectile via fallback:', arrowProjectile.type, 'Total projectiles:', window.projectiles.length);
                  break;
                  
              case 'fireball':
                  // Fallback handler for direct fireball messages (shouldn't happen with fixed server)
-                 console.log('Received direct fireball message (fallback handler)');
                  if (!window.projectiles) window.projectiles = [];
                  const fireballProjectile = { ...msg };
                  window.projectiles.push(fireballProjectile);
-                 console.log('Added fireball projectile via fallback:', fireballProjectile.type, 'Total projectiles:', window.projectiles.length);
                  break;
                  
              case 'projectileUpdate':
@@ -1326,7 +1619,6 @@ window.handleServerMessage = function(msg) {
                  break;
                  
              default:
-                 console.log('Unhandled server message:', msg.type, msg);
         }
     } catch (e) {
         console.error('Error handling server message:', e);
